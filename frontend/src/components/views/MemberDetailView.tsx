@@ -3,24 +3,38 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { ArrowLeft, CalendarClock, MessageSquare, Sparkles } from "lucide-react";
-import {
-  Area,
-  AreaChart,
-  Bar,
-  BarChart,
-  CartesianGrid,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
 import PageToolbar from "@/components/shell/PageToolbar";
+import { usePendingBar } from "@/components/shell/AppShell";
 import PeriodPicker from "@/components/shell/PeriodPicker";
 import { BoostBadge, BoostIcon, ServerTagChip, UserAvatar } from "./discord/DiscordIdentity";
 import StatCard from "./StatCard";
-import { fetchAPI } from "@/lib/api";
+import { TileExpandable } from "./TileDialog";
+import { CategoryBarChart, ChannelShareDonut, DailyTrendChart } from "./charts";
+import {
+  DialogSection,
+  DialogStats,
+  dowLabel,
+  fmtDay,
+  jaNum,
+  type DialogStatItem,
+} from "./dialog-parts";
+import {
+  LongestMessageSection,
+  activeDaysDialog,
+  avgCharsDialog,
+  channelShareDialog,
+  charsDialog,
+  hourDialog as hourDialogContent,
+  dowDialog as dowDialogContent,
+  totalMessagesDialog,
+  trendDialog,
+  type DialogData,
+} from "./dialog-contents";
+import { deltaRate } from "./DeltaBadge";
+import { fetchAPI, prefetchAPI } from "@/lib/api";
 import { formatDiscordDate, profileBannerStyle, snowflakeToDate } from "@/lib/discord-assets";
-import { periodLabel } from "@/lib/period";
+import MemberNoContent from "@/components/views/MemberNoContent";
+import { periodLabel, previousMonthOf, latestPublishedMonth } from "@/lib/period";
 
 interface InsightsUser {
   user_id: string;
@@ -46,6 +60,12 @@ interface Insights {
   channels: Array<{ channel_id: string; name: string; count: number }>;
   dow: Array<{ dow: number; count: number }>;
   hours: Array<{ hour: number; count: number }>;
+  longest_message: {
+    chars: number;
+    display_name: string;
+    date: string;
+    channel_name?: string;
+  } | null;
   first_at: string | null;
   last_at: string | null;
 }
@@ -75,44 +95,92 @@ export default function MemberDetailView({
   period: { key: string; year: number | null; month: number | null; isAll: boolean };
 }) {
   const [data, setData] = useState<Insights | null>(null);
+  const [prevData, setPrevData] = useState<Insights | null>(null);
   const [failed, setFailed] = useState(false);
 
   const base = period.isAll
     ? `/users/${userId}/insights/total`
     : `/users/${userId}/insights/${period.year}/${period.month}`;
 
+  // 前期間比表示用に前月のinsightsも取得する (全期間は比較対象がないためnull)
+  const prevMonth = previousMonthOf(period);
+  const prevBase = prevMonth
+    ? `/users/${userId}/insights/${prevMonth.year}/${prevMonth.month}`
+    : null;
+
   useEffect(() => {
     let cancelled = false;
     setData(null);
+    setPrevData(null);
     setFailed(false);
-    fetchAPI(base, { retries: 1 })
-      .then(async (res) => {
+    // 本体を先に取得して表示し、前期間比 (delta) はその後に取得する
+    const loadBase = async () => {
+      try {
+        const res = await fetchAPI(base, { retries: 1 });
+        if (cancelled) return;
         if (!res.ok) throw new Error(String(res.status));
         const body = (await res.json()) as Insights;
         if (!cancelled) setData(body);
-      })
-      .catch(() => {
+      } catch {
         if (!cancelled) setFailed(true);
-      });
+      }
+    };
+    const loadPrev = async () => {
+      if (!prevBase) return;
+      try {
+        const res = await fetchAPI(prevBase, { retries: 1 });
+        if (cancelled) return;
+        if (res.ok) setPrevData((await res.json()) as Insights);
+      } catch {
+        // 前期間比は装飾的なので失敗しても画面は崩さない
+      }
+    };
+    void loadBase().then(loadPrev);
     return () => {
       cancelled = true;
     };
-  }, [base, userId]);
+  }, [base, prevBase, userId]);
+
+  // データ取得後、前後の月のinsightsを事前取得しておく (期間切替を高速化)
+  useEffect(() => {
+    if (!data) return;
+    const bases: string[] = [];
+    if (period.isAll) {
+      const latest = latestPublishedMonth();
+      bases.push(`/users/${userId}/insights/${latest.year}/${latest.month}`);
+    } else if (period.year && period.month) {
+      const prev = previousMonthOf({
+        key: "",
+        year: period.year,
+        month: period.month,
+        isAll: false,
+      });
+      if (prev) bases.push(`/users/${userId}/insights/${prev.year}/${prev.month}`);
+      const nextMonth = period.month === 12 ? 1 : period.month + 1;
+      const nextYear = period.month === 12 ? period.year + 1 : period.year;
+      const latest = latestPublishedMonth();
+      const published =
+        nextYear < latest.year || (nextYear === latest.year && nextMonth <= latest.month);
+      if (published) bases.push(`/users/${userId}/insights/${nextYear}/${nextMonth}`);
+    }
+    if (bases.length === 0) return;
+    const timer = setTimeout(() => {
+      for (const base of bases) prefetchAPI(base);
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, [data, userId, period]);
 
   const title = period.isAll ? "全期間" : periodLabel(period);
 
-  const chartData = useMemo(
-    () =>
-      data
-        ? data.daily.map((point) => ({ label: shortDate(point.date), 発言数: point.count }))
-        : [],
+  const trendPoints = useMemo(
+    () => (data?.daily ?? []).map((p) => ({ date: Date.parse(p.date), value: p.count })),
     [data],
   );
 
   const dowData = useMemo(() => {
     if (!data) return [];
     const map = new Map(data.dow.map((d) => [d.dow, d.count]));
-    return DOW_LABELS.map((label, dow) => ({ label, 発言数: map.get(dow) ?? 0 }));
+    return DOW_LABELS.map((label, dow) => ({ label, value: map.get(dow) ?? 0 }));
   }, [data]);
 
   const hourData = useMemo(() => {
@@ -120,29 +188,170 @@ export default function MemberDetailView({
     const map = new Map(data.hours.map((h) => [h.hour, h.count]));
     return Array.from({ length: 24 }, (_, hour) => ({
       label: String(hour),
-      発言数: map.get(hour) ?? 0,
+      value: map.get(hour) ?? 0,
     }));
   }, [data]);
 
   const accountCreatedAt = useMemo(() => snowflakeToDate(userId), [userId]);
 
-  if (failed) {
-    return (
-      <div className="app-card-padded text-center text-sm text-muted-foreground">
-        データの読み込みに失敗しました。
-      </div>
-    );
-  }
+  // 初回読み込み中はカード構成 (タイトル等) を維持し、値とグラフだけスケルトンにする。
+  // 失敗時も同じ構成のまま「—」等を表示して崩れないようにする
+  const loading = !data && !failed;
 
+  // 読み込み中はシェル最上部の共通バーを出す
+  usePendingBar(loading);
+
+  // 初回読み込み中・失敗時はカード構成 (タイトル) を維持したスケルトンを表示する。
+  // 失敗時は shimmer を止めて「—」等を表示して崩れないようにする
   if (!data) {
+    const sk = (cls: string) => (loading ? `skeleton ${cls}` : `bg-muted ${cls}`);
     return (
-      <div className="space-y-4">
-        <div className="h-16 w-72 animate-pulse rounded-xl bg-muted" />
-        <div className="h-52 animate-pulse rounded-2xl bg-muted" />
-        <div className="flex gap-3">
-          {Array.from({ length: 3 }, (_, i) => (
-            <div key={i} className="h-20 flex-1 animate-pulse rounded-2xl bg-muted" />
-          ))}
+      <div className="space-y-5">
+        <Link
+          href={`/members?m=${period.key}`}
+          className="inline-flex items-center gap-1 text-sm font-bold text-muted-foreground transition-colors hover:text-foreground"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          メンバー一覧へ戻る
+        </Link>
+
+        <PageToolbar
+          title={title}
+          subtitle="メンバーの行動や好みをより詳しく把握しましょう！"
+          right={<PeriodPicker period={period} />}
+        />
+
+        {failed && (
+          <div className="app-card-padded text-sm text-muted-foreground">
+            データの読み込みに失敗しました。時間をおいて再読み込みしてください。
+          </div>
+        )}
+
+        <div className="grid items-stretch gap-4 lg:grid-cols-2">
+          <div className="app-card anim-rise overflow-hidden">
+            <div className={sk("h-32 w-full md:h-40")} />
+            <div className="px-5 pb-5 md:px-6">
+              <div className="-mt-10 mb-3">
+                <div className={sk("h-20 w-20 rounded-full")} />
+              </div>
+              <div className="space-y-2">
+                <div className={sk("h-6 w-48 rounded-lg")} />
+                <div className={sk("h-4 w-32 rounded-md")} />
+              </div>
+              <div className="mt-4 space-y-2.5 border-t border-border pt-4">
+                {Array.from({ length: 4 }, (_, i) => (
+                  <div key={i} className={sk("h-4 w-full max-w-64 rounded-md")} />
+                ))}
+              </div>
+            </div>
+          </div>
+          <div
+            className="anim-rise grid auto-rows-fr grid-cols-2 gap-4"
+            style={{ animationDelay: "60ms" }}
+          >
+            {["発言数", "総文字数", "平均文字数/発言", "アクティブ日数"].map((t) => (
+              <StatCard key={t} title={t} value="—" loading={loading} />
+            ))}
+          </div>
+        </div>
+
+        <TileExpandable
+          className="anim-rise"
+          label="日別の発言数推移"
+          dialog={
+            <div className="pr-7">
+              {loading ? (
+                <div className={sk("h-[300px] rounded-xl")} />
+              ) : (
+                <p className="py-10 text-center text-sm text-muted-foreground">
+                  データの読み込みに失敗しました。
+                </p>
+              )}
+            </div>
+          }
+        >
+          <div className="app-card-padded app-tile flex h-full min-w-0 flex-col">
+            <p className="text-sm font-black text-foreground">日別の発言数推移</p>
+            <p className="mt-0.5 mb-2 text-xs font-bold text-muted-foreground">
+              {title}の毎日の発言数
+            </p>
+            <div className={sk("h-[240px] rounded-xl")} />
+          </div>
+        </TileExpandable>
+
+        <div className="grid gap-4 lg:grid-cols-2">
+          <TileExpandable
+            className="anim-rise"
+            label="よく発言するチャンネル"
+            dialog={
+              <div className="pr-7">
+                {loading ? (
+                  <div className={sk("h-[280px] rounded-xl")} />
+                ) : (
+                  <p className="py-10 text-center text-sm text-muted-foreground">
+                    データの読み込みに失敗しました。
+                  </p>
+                )}
+              </div>
+            }
+          >
+            <div className="app-card-padded app-tile flex h-full min-w-0 flex-col justify-center">
+              {loading ? (
+                <div className="skeleton mx-auto h-[220px] w-[220px] rounded-full" />
+              ) : (
+                <p className="py-10 text-center text-sm text-muted-foreground">
+                  データの読み込みに失敗しました。
+                </p>
+              )}
+            </div>
+          </TileExpandable>
+
+          <div className="flex flex-col gap-4">
+            <TileExpandable
+              className="anim-rise flex-1"
+              label="曜日別の発言数"
+              dialog={
+                <div className="pr-7">
+                  {loading ? (
+                    <div className={sk("h-[280px] rounded-xl")} />
+                  ) : (
+                    <p className="py-10 text-center text-sm text-muted-foreground">
+                      データの読み込みに失敗しました。
+                    </p>
+                  )}
+                </div>
+              }
+            >
+              <div className="app-card-padded app-tile flex h-full min-w-0 flex-col justify-center">
+                <p className="text-sm font-black text-foreground">曜日別の発言数</p>
+                <div className="mt-2">
+                  <div className={sk("h-[130px] rounded-xl")} />
+                </div>
+              </div>
+            </TileExpandable>
+            <TileExpandable
+              className="anim-rise flex-1"
+              label="時間帯別の発言数"
+              dialog={
+                <div className="pr-7">
+                  {loading ? (
+                    <div className={sk("h-[280px] rounded-xl")} />
+                  ) : (
+                    <p className="py-10 text-center text-sm text-muted-foreground">
+                      データの読み込みに失敗しました。
+                    </p>
+                  )}
+                </div>
+              }
+            >
+              <div className="app-card-padded app-tile flex h-full min-w-0 flex-col justify-center">
+                <p className="text-sm font-black text-foreground">時間帯別の発言数</p>
+                <div className="mt-2">
+                  <div className={sk("h-[130px] rounded-xl")} />
+                </div>
+              </div>
+            </TileExpandable>
+          </div>
         </div>
       </div>
     );
@@ -158,16 +367,73 @@ export default function MemberDetailView({
           <ArrowLeft className="h-4 w-4" />
           メンバー一覧へ戻る
         </Link>
-        <div className="app-card-padded text-center text-sm text-muted-foreground">
-          この期間に発言記録のないメンバーです。
-        </div>
+        <MemberNoContent userId={userId} />
       </div>
     );
   }
 
   const user = data.user;
   const activeDays = data.daily.filter((p) => p.count > 0).length;
-  const channelMax = data.channels[0]?.count ?? 1;
+  const charsTrendPoints = data.daily.some((p) => p.chars !== undefined)
+    ? data.daily.map((p) => ({ date: Date.parse(p.date), value: p.chars ?? 0 }))
+    : null;
+  const channelsTotal = data.channels.reduce((s, c) => s + c.count, 0);
+  const top3Share =
+    channelsTotal > 0
+      ? data.channels.slice(0, 3).reduce((s, c) => s + c.count, 0) / channelsTotal
+      : null;
+  /** 発言率 (0〜1) を % 表記に。対象が0なら null */
+  const pct = (rate: number | null) => (rate === null ? "—" : `${Math.round(rate * 1000) / 10}%`);
+
+  // 各カードの拡大ポップアップに渡すデータ一式 (メンバーは曜日別データがないため
+  // ヒートマップのmatrixは時間帯集計のみ時間帯比率に使う)
+  const hourMatrix = (() => {
+    const m = Array.from({ length: 7 }, () => Array<number>(24).fill(0));
+    for (const h of data.hours) m[0][h.hour] = h.count;
+    return m;
+  })();
+  const dlgCtx: DialogData = {
+    daily: data.daily.map((p) => ({ date: Date.parse(p.date), value: p.count })),
+    dailyChars: data.daily.some((p) => p.chars !== undefined)
+      ? data.daily.map((p) => ({ date: Date.parse(p.date), value: p.chars ?? 0 }))
+      : undefined,
+    matrix: hourMatrix,
+    dowData: DOW_LABELS.map((label, dow) => ({
+      label,
+      value: data.dow.find((d) => d.dow === dow)?.count ?? 0,
+    })),
+    hourData: Array.from({ length: 24 }, (_, hour) => ({
+      label: String(hour),
+      value: data.hours.find((h) => h.hour === hour)?.count ?? 0,
+    })),
+    channels: data.channels.map((c) => ({ name: c.name, value: c.count })),
+    analysis: {
+      new_members: null,
+      repeat: null,
+      longest_message: data.longest_message,
+      leaders: null,
+    },
+    isAll: period.isAll,
+  };
+  const dlg = {
+    messages: totalMessagesDialog(dlgCtx),
+    chars: charsDialog(dlgCtx),
+    avgChars: avgCharsDialog(dlgCtx),
+    activeDays: activeDaysDialog(dlgCtx),
+    trend: trendDialog(dlgCtx),
+    share: channelShareDialog(dlgCtx),
+    dow: dowDialogContent(dlgCtx),
+    hour: hourDialogContent(dlgCtx),
+  };
+
+  // 前期間比 (全期間や前月データなしのときはnull → "--"表示)
+  const prevInsights = period.isAll ? null : prevData;
+  const prevActiveDays = prevInsights ? prevInsights.daily.filter((p) => p.count > 0).length : null;
+  const curAvgChars = data.messages > 0 ? Math.round(data.chars / data.messages) : null;
+  const prevAvgChars =
+    prevInsights && prevInsights.messages > 0
+      ? Math.round(prevInsights.chars / prevInsights.messages)
+      : null;
 
   return (
     <div className="space-y-5">
@@ -187,7 +453,7 @@ export default function MemberDetailView({
 
       {/* プロフィール (左) とKPI (右) を別カードで左右に配置 */}
       <div className="grid items-stretch gap-4 lg:grid-cols-2">
-        <div className="app-card overflow-hidden">
+        <div className="app-card anim-rise overflow-hidden">
           <div
             className="h-32 w-full md:h-40"
             style={profileBannerStyle({
@@ -236,174 +502,164 @@ export default function MemberDetailView({
             </div>
           </div>
         </div>
-        <div className="grid auto-rows-fr grid-cols-2 gap-4">
+        <div
+          className="anim-rise grid auto-rows-fr grid-cols-2 gap-4"
+          style={{ animationDelay: "60ms" }}
+        >
           <StatCard
             title="発言数"
             value={data.messages}
             unit="件"
-            series={data.daily.map((p) => ({ label: shortDate(p.date), value: p.count }))}
+            delta={deltaRate(data.messages, prevInsights?.messages ?? null)}
+            series={data.daily.map((p) => ({
+              label: shortDate(p.date),
+              date: Date.parse(p.date),
+              value: p.count,
+            }))}
+            dialogStats={dlg.messages.stats}
+            dialogExtra={dlg.messages.extra}
           />
           <StatCard
             title="総文字数"
             value={data.chars}
             unit="字"
-            series={data.daily.map((p) => ({ label: shortDate(p.date), value: p.chars ?? 0 }))}
+            delta={deltaRate(data.chars, prevInsights?.chars ?? null)}
+            series={data.daily.map((p) => ({
+              label: shortDate(p.date),
+              date: Date.parse(p.date),
+              value: p.chars ?? 0,
+            }))}
+            dialogStats={dlg.chars.stats}
+            dialogExtra={dlg.chars.extra}
           />
           <StatCard
             title="平均文字数/発言"
-            value={data.messages > 0 ? Math.round(data.chars / data.messages) : "—"}
+            value={curAvgChars ?? "—"}
             unit="字"
+            delta={deltaRate(curAvgChars, prevAvgChars)}
             series={data.daily.map((p) => ({
               label: shortDate(p.date),
+              date: Date.parse(p.date),
               value: p.count > 0 ? Math.round((p.chars ?? 0) / p.count) : 0,
             }))}
+            dialogStats={dlg.avgChars.stats}
+            dialogExtra={dlg.avgChars.extra}
           />
           <StatCard
             title="アクティブ日数"
             value={activeDays}
             unit="日"
+            delta={deltaRate(activeDays, prevActiveDays)}
             chartType="bar"
             series={data.daily.map((p) => ({ label: shortDate(p.date), value: p.count }))}
+            dialogStats={dlg.activeDays.stats}
+            dialogExtra={dlg.activeDays.extra}
           />
         </div>
       </div>
 
-      <div className="app-card-padded">
-        <p className="text-sm font-black text-foreground">日別の発言数推移</p>
-        <p className="mt-0.5 mb-4 text-xs font-bold text-muted-foreground">{title}の毎日の発言数</p>
-        <div className="h-64">
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={chartData} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
-              <CartesianGrid vertical={false} stroke="rgba(148,155,166,0.22)" />
-              <XAxis
-                dataKey="label"
-                tickLine={false}
-                axisLine={false}
-                tick={{ fontSize: 11, fill: "#979da6" }}
-                minTickGap={28}
-              />
-              <YAxis
-                tickLine={false}
-                axisLine={false}
-                tick={{ fontSize: 11, fill: "#979da6" }}
-                width={40}
-              />
-              <Tooltip
-                contentStyle={{
-                  borderRadius: 12,
-                  border: "1px solid rgba(148,155,166,0.35)",
-                  fontSize: 12,
-                  fontWeight: 700,
-                  background: "var(--app-canvas)",
-                  color: "var(--app-sidebar-text-strong)",
-                }}
-                formatter={(value) => [`${Number(value).toLocaleString("ja-JP")}件`, ""]}
-              />
-              <Area
-                type="monotone"
-                dataKey="発言数"
-                stroke="#3964fe"
-                strokeWidth={2.5}
-                fill="#3964fe"
-                fillOpacity={0.08}
-              />
-            </AreaChart>
-          </ResponsiveContainer>
+      <TileExpandable
+        className="anim-rise"
+        label="日別の発言数推移"
+        dialog={
+          <div className="pr-7">
+            <DialogStats items={dlg.trend.stats} />
+            <div className="mt-4">
+              <DailyTrendChart points={trendPoints} height={300} />
+            </div>
+            {dlg.trend.extra}
+            {charsTrendPoints && (
+              <div className="mt-5">
+                <DialogSection title="文字数の推移" note="1日の合計文字数">
+                  <DailyTrendChart points={charsTrendPoints} height={180} />
+                </DialogSection>
+              </div>
+            )}
+          </div>
+        }
+      >
+        <div className="app-card-padded app-tile flex h-full min-w-0 flex-col">
+          <p className="text-sm font-black text-foreground">日別の発言数推移</p>
+          <p className="mt-0.5 mb-2 text-xs font-bold text-muted-foreground">
+            {title}の毎日の発言数
+          </p>
+          <div className="h-[240px]">
+            <div className="data-in h-full">
+              <DailyTrendChart points={trendPoints} fill className="h-full" />
+            </div>
+          </div>
         </div>
-      </div>
+      </TileExpandable>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <div className="app-card-padded">
-          <p className="text-sm font-black text-foreground">よく発言するチャンネル</p>
-          <p className="mt-0.5 mb-4 text-xs font-bold text-muted-foreground">
-            発言数の多いチャンネル トップ10
-          </p>
-          <ul className="space-y-2.5">
-            {data.channels.map((channel) => (
-              <li key={channel.channel_id}>
-                <div className="mb-1 flex items-center justify-between gap-2 text-xs font-bold">
-                  <span className="truncate text-foreground">#{channel.name}</span>
-                  <span className="shrink-0 text-muted-foreground">
-                    {channel.count.toLocaleString("ja-JP")}
-                  </span>
-                </div>
-                <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
-                  <div
-                    className="h-full rounded-full bg-accent-data"
-                    style={{
-                      width: `${Math.max(4, Math.round((channel.count / channelMax) * 100))}%`,
-                    }}
-                  />
-                </div>
-              </li>
-            ))}
-            {data.channels.length === 0 && (
-              <p className="py-6 text-center text-sm text-muted-foreground">データがありません</p>
-            )}
-          </ul>
-        </div>
+        <TileExpandable
+          className="anim-rise"
+          label="よく発言するチャンネル"
+          dialog={
+            <div className="pr-7">
+              <DialogStats className="mb-4" items={dlg.share.stats} />
+              <ChannelShareDonut
+                channels={data.channels.map((c) => ({ name: c.name, value: c.count }))}
+                max={10}
+              />
+            </div>
+          }
+        >
+          <div className="app-card-padded app-tile flex h-full min-w-0 flex-col justify-center">
+            <div className="data-in">
+              <ChannelShareDonut
+                channels={data.channels.map((c) => ({ name: c.name, value: c.count }))}
+                max={10}
+                showLegend={false}
+              />
+            </div>
+          </div>
+        </TileExpandable>
 
-        <div className="space-y-4">
-          <div className="app-card-padded">
-            <p className="text-sm font-black text-foreground">曜日別の発言数</p>
-            <div className="mt-3 h-36">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={dowData} margin={{ top: 4, right: 0, bottom: 0, left: 0 }}>
-                  <XAxis
-                    dataKey="label"
-                    tickLine={false}
-                    axisLine={false}
-                    tick={{ fontSize: 11, fill: "#979da6" }}
-                  />
-                  <YAxis hide />
-                  <Tooltip
-                    cursor={{ fill: "rgba(127,127,127,0.08)" }}
-                    contentStyle={{
-                      borderRadius: 12,
-                      border: "1px solid rgba(148,155,166,0.35)",
-                      fontSize: 12,
-                      fontWeight: 700,
-                      background: "var(--app-canvas)",
-                      color: "var(--app-sidebar-text-strong)",
-                    }}
-                    formatter={(value) => [`${Number(value).toLocaleString("ja-JP")}件`, ""]}
-                  />
-                  <Bar dataKey="発言数" fill="#3964fe" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
+        {/* ドーナツカードと高さが揃うよう均等に伸縮させる */}
+        <div className="flex flex-col gap-4">
+          <TileExpandable
+            className="anim-rise flex-1"
+            label="曜日別の発言数"
+            dialog={
+              <div className="pr-7">
+                <DialogStats className="mb-4" items={dlg.dow.stats} />
+                <p className="mb-3 text-sm font-black text-foreground">曜日別の発言数</p>
+                <CategoryBarChart data={dowData} height={280} />
+                <div className="mt-5">{dlg.dow.extra}</div>
+              </div>
+            }
+          >
+            <div className="app-card-padded app-tile flex h-full min-w-0 flex-col justify-center">
+              <p className="text-sm font-black text-foreground">曜日別の発言数</p>
+              <div className="mt-2">
+                <div className="data-in">
+                  <CategoryBarChart data={dowData} height={130} />
+                </div>
+              </div>
             </div>
-          </div>
-          <div className="app-card-padded">
-            <p className="text-sm font-black text-foreground">時間帯別の発言数</p>
-            <div className="mt-3 h-36">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={hourData} margin={{ top: 4, right: 0, bottom: 0, left: 0 }}>
-                  <XAxis
-                    dataKey="label"
-                    tickLine={false}
-                    axisLine={false}
-                    tick={{ fontSize: 10, fill: "#979da6" }}
-                    interval={2}
-                  />
-                  <YAxis hide />
-                  <Tooltip
-                    cursor={{ fill: "rgba(127,127,127,0.08)" }}
-                    contentStyle={{
-                      borderRadius: 12,
-                      border: "1px solid rgba(148,155,166,0.35)",
-                      fontSize: 12,
-                      fontWeight: 700,
-                      background: "var(--app-canvas)",
-                      color: "var(--app-sidebar-text-strong)",
-                    }}
-                    formatter={(value) => [`${Number(value).toLocaleString("ja-JP")}件`, ""]}
-                    labelFormatter={(label) => `${label}時台`}
-                  />
-                  <Bar dataKey="発言数" fill="#3964fe" radius={[3, 3, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
+          </TileExpandable>
+          <TileExpandable
+            className="anim-rise flex-1"
+            label="時間帯別の発言数"
+            dialog={
+              <div className="pr-7">
+                <DialogStats className="mb-4" items={dlg.hour.stats} />
+                <p className="mb-3 text-sm font-black text-foreground">時間帯別の発言数</p>
+                <CategoryBarChart data={hourData} height={280} />
+                <div className="mt-5">{dlg.hour.extra}</div>
+              </div>
+            }
+          >
+            <div className="app-card-padded app-tile flex h-full min-w-0 flex-col justify-center">
+              <p className="text-sm font-black text-foreground">時間帯別の発言数</p>
+              <div className="mt-2">
+                <div className="data-in">
+                  <CategoryBarChart data={hourData} height={130} />
+                </div>
+              </div>
             </div>
-          </div>
+          </TileExpandable>
         </div>
       </div>
     </div>

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import {
   ChartColumn,
   GitCompareArrows,
@@ -15,9 +15,10 @@ import {
   X,
 } from "lucide-react";
 import { useTheme } from "next-themes";
-import { periodHref, parsePeriod, type Period } from "@/lib/period";
+import { periodHref, parsePeriod, rememberMonthlyPeriod, type Period } from "@/lib/period";
 import { fetchAPI } from "@/lib/api";
 import UserArea from "./UserArea";
+import FooterSection from "./FooterSection";
 
 export interface GuildBrand {
   name: string;
@@ -31,6 +32,29 @@ const GuildNameContext = createContext<string>("");
 /** 親Shellから提供されたサーバー名を取得する */
 export function useGuildName(): string {
   return useContext(GuildNameContext);
+}
+
+/** フッターのアクションスロット (カードの順列リセット等)。ページ側から登録する */
+const FooterActionContext = createContext<(node: ReactNode) => void>(() => {});
+
+export function useFooterAction(node: ReactNode) {
+  const register = useContext(FooterActionContext);
+  useEffect(() => {
+    register(node);
+    return () => register(null);
+  }, [register, node]);
+}
+
+/** 読み込み中表示のスロット。ページ側からusePendingBar()で状態を共有する */
+const PendingBarContext = createContext<(active: boolean) => void>(() => {});
+
+/** trueの間、シェル最上部の共通読み込みバーを表示する */
+export function usePendingBar(active: boolean) {
+  const setActive = useContext(PendingBarContext);
+  useEffect(() => {
+    setActive(active);
+    return () => setActive(false);
+  }, [setActive, active]);
 }
 
 const NAV_ITEMS = [
@@ -187,7 +211,6 @@ function SidebarBody({
   period: Period;
   onNavigate?: () => void;
 }) {
-  const name = guild.name || "ダッシュボード";
   return (
     <div className="flex h-full flex-col">
       {/* プロフィールの上までがスクロール領域。プロフィールは常に画面内に表示する */}
@@ -206,10 +229,12 @@ function SidebarBody({
               </div>
             )}
             <div className="min-w-0">
-              <p className="truncate text-sm font-bold leading-tight text-sidebar-text-strong">
-                {name}
+              <p
+                className="truncate text-2xl font-bold tracking-tight text-sidebar-text-strong"
+                style={{ fontFamily: "'Google Sans', 'Outfit', Arial, sans-serif" }}
+              >
+                Analytics
               </p>
-              <p className="text-[11px] font-bold text-sidebar-text">Discord Analytics</p>
             </div>
           </Link>
           {/* モバイルのダークモード切替は上部バーにあるためドロワー内では非表示にする */}
@@ -229,20 +254,28 @@ function SidebarBody({
 
 export default function AppShell({
   guild = { name: "", iconUrl: null, isDefault: true },
+  siteDomain = null,
   children,
 }: {
   guild?: GuildBrand;
+  /** フッター表示用のルートドメイン (設定ドメインから導出)。未解決ならnull */
+  siteDomain?: string | null;
   children: React.ReactNode;
 }) {
   const pathname = usePathname() ?? "/";
   const router = useRouter();
   const [mParam, setMParam] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [footerAction, setFooterAction] = useState<ReactNode>(null);
+  /** ページ側 (usePendingBar) からの読み込み中表示 */
+  const [pending, setPending] = useState(false);
 
   // searchParamsはSuspense要件を避けるため軽量に読む (期間パラメータのみ)
   useEffect(() => {
     const m = new URLSearchParams(window.location.search).get("m");
     setMParam(m);
+    // 選択した月別期間を記憶する (全期間→月別トグルでの復帰用)
+    if (m) rememberMonthlyPeriod(m);
     setDrawerOpen(false);
   }, [pathname, router]);
 
@@ -299,11 +332,24 @@ export default function AppShell({
         </div>
       )}
 
-      <div className="md:pl-72">
+      {/* コンテンツ列: 中身が短くてもフッターが下端に張り付くようフレックス列にする */}
+      <div className="flex min-h-screen flex-col md:pl-72">
         <GuildNameContext value={guild.name}>
-          <main className="mx-auto w-full max-w-7xl px-4 pb-16 pt-6 md:px-8 md:pt-8">
-            {children}
-          </main>
+          <FooterActionContext value={setFooterAction}>
+            <PendingBarContext value={setPending}>
+              {/* 読み込み中インジケーター: サイドバー横のコンテンツ列最上部に固定 */}
+              <div
+                aria-hidden="true"
+                className={`sticky top-0 z-40 h-1.5 overflow-hidden transition-opacity duration-200 ${pending ? "opacity-100" : "opacity-0"}`}
+              >
+                <div className="loading-bar h-full w-1/3 rounded-full bg-accent-data blur-[2px]" />
+              </div>
+              <main className="mx-auto w-full max-w-7xl flex-1 px-4 pb-10 pt-6 md:px-8 md:pt-8">
+                {children}
+              </main>
+              <FooterSection domain={siteDomain} action={footerAction} />
+            </PendingBarContext>
+          </FooterActionContext>
         </GuildNameContext>
       </div>
     </div>

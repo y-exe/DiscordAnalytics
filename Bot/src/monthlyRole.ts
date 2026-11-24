@@ -20,7 +20,7 @@ export async function updateMonthlyRoleOnce(
   try {
     await db.query("BEGIN");
     const lock = await db.query("SELECT pg_try_advisory_xact_lock(hashtext($1)) AS acquired", [
-      `ymkw-monthly-role:${guildId}:${roleId}`,
+      `discord-analytics-monthly-role:${guildId}:${roleId}`,
     ]);
     if (!lock.rows[0]?.acquired) {
       await db.query("ROLLBACK");

@@ -550,7 +550,7 @@ async function backfill(client: Client, options: BackfillOptions): Promise<void>
 
   const pool = createPool(dsn, {
     max: 5,
-    applicationName: "ymkw-history-scanner",
+    applicationName: "discord-analytics-history-scanner",
     statementTimeoutMs: 120_000,
   });
 

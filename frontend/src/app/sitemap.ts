@@ -1,10 +1,10 @@
 import type { MetadataRoute } from "next";
-import { getGuildBaseUrl } from "@/lib/guild-context";
+import { DEFAULT_SITE_ORIGIN, getGuildBaseUrl } from "@/lib/guild-context";
 
 export const dynamic = "force-dynamic";
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const base = (await getGuildBaseUrl()) ?? "https://ymkw.top";
+  const base = (await getGuildBaseUrl()) ?? DEFAULT_SITE_ORIGIN;
   const siteUrl = base.replace(/\/$/, "");
   const now = new Date();
   const months = Array.from({ length: 24 }, (_, index) => {

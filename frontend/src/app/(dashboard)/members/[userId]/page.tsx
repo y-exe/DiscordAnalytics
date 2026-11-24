@@ -6,7 +6,7 @@ import {
   socialMetadata,
 } from "@/lib/discord-embed";
 import { fetchAPI } from "@/lib/api";
-import { getGuildBaseUrl, getGuildContext } from "@/lib/guild-context";
+import { DEFAULT_SITE_ORIGIN, getGuildBaseUrl, getGuildContext } from "@/lib/guild-context";
 import { parsePeriod, periodLabel } from "@/lib/period";
 import { formatNumber } from "@/lib/seo";
 
@@ -63,7 +63,7 @@ export async function generateMetadata({ params, searchParams }: PageProps): Pro
   return socialMetadata({
     title,
     description: parts.join(" "),
-    url: `${baseUrl ?? "https://ymkw.top"}/members/${userId}`,
+    url: `${baseUrl ?? DEFAULT_SITE_ORIGIN}/members/${userId}`,
     imageUrl: avatar,
   });
 }
@@ -78,7 +78,7 @@ export default async function MemberDetailPage({ params, searchParams }: PagePro
     getGuildBaseUrl(),
     fetchMemberInsights(userId, m),
   ]);
-  const base = baseUrl ?? "https://ymkw.top";
+  const base = baseUrl ?? DEFAULT_SITE_ORIGIN;
   const subject = guild.name || "Discordサーバー";
   const name = insights?.user?.display_name ?? "メンバー";
   const avatar = insights?.user?.avatar ?? insights?.user?.avatar_fallback ?? null;

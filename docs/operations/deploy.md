@@ -16,10 +16,13 @@ GitHub Actions (`ghcr-publish.yml`) が `main` へのpushを受け、`bun run ch
 
 | ジョブ | イメージ |
 | --- | --- |
-| build-and-push-frontend | 統合コンテナ (Next.js SSR + `/api` Honoマウント) |
-| build-and-push-bot | 収集Bot |
+| build-and-push-frontend | `ghcr.io/y-exe/discord-analytics-frontend` (統合コンテナ: Next.js SSR + `/api` Honoマウント) |
+| build-and-push-bot | `ghcr.io/y-exe/discord-analytics-bot` (収集Bot) |
 
 コンテキストはリポジトリルートです (共有ソースを含めるため)。
+
+> [!NOTE]
+> 2026-11-24にイメージ・内部名から固有要素 (ymkw) を除去しました: イメージ名は `discord-analytics-backend/bot/frontend`、ログプレフィックスは `discord-analytics-api:`、ディスクキャッシュは `discord_analytics_diskcache_v14`、管理者cookieは `__Secure-analytics_admin`、Botの月次ロール進捗キーは `discord-analytics-monthly-role:`。イメージ名変更に合わせて vpsリポジトリの k3sマニフェスト (Deployment/Service/Secret名・image参照) も同時にリネームしてください (`ymkw-frontend` → `discord-analytics-frontend` 等)。
 
 ## Secret
 

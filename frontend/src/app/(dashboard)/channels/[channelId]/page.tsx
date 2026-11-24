@@ -6,7 +6,7 @@ import {
   socialMetadata,
 } from "@/lib/discord-embed";
 import { fetchAPI } from "@/lib/api";
-import { getGuildBaseUrl, getGuildContext } from "@/lib/guild-context";
+import { DEFAULT_SITE_ORIGIN, getGuildBaseUrl, getGuildContext } from "@/lib/guild-context";
 import { parsePeriod, periodLabel } from "@/lib/period";
 import { formatNumber } from "@/lib/seo";
 
@@ -53,7 +53,7 @@ export async function generateMetadata({ params, searchParams }: PageProps): Pro
   return socialMetadata({
     title,
     description,
-    url: `${baseUrl ?? "https://ymkw.top"}/channels/${channelId}`,
+    url: `${baseUrl ?? DEFAULT_SITE_ORIGIN}/channels/${channelId}`,
     imageUrl: guild.iconUrl,
   });
 }
@@ -68,7 +68,7 @@ export default async function ChannelDetailPage({ params, searchParams }: PagePr
     getGuildBaseUrl(),
     fetchChannelInsights(channelId, m),
   ]);
-  const base = baseUrl ?? "https://ymkw.top";
+  const base = baseUrl ?? DEFAULT_SITE_ORIGIN;
   const subject = guild.name || "Discordサーバー";
   const name = insights?.channel?.name ?? "チャンネル";
   const label = periodLabel(period);

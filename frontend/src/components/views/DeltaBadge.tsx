@@ -1,30 +1,37 @@
 import { ArrowDownRight, ArrowRight, ArrowUpRight } from "lucide-react";
 
 /**
- * 前期間比バッジ。nullは前期間データなし (=→)。
+ * 前期間比。null (前期間データなし・全期間など) は何も表示しない。
  * deltaは小数 (0.042 = +4.2%)。
+ * variant:
+ * - badge: 背景付きバッジ (テーブル等)
+ * - text:  Cloudflareタイル風のプレーンテキスト (値の横に添える)
  */
 export default function DeltaBadge({
   delta,
   className = "",
+  variant = "badge",
 }: {
   delta: number | null;
   className?: string;
+  variant?: "badge" | "text";
 }) {
-  if (delta === null || !Number.isFinite(delta)) {
-    return (
-      <span
-        className={`inline-flex items-center gap-1 rounded-md bg-muted px-1.5 py-0.5 text-xs font-bold text-muted-foreground ${className}`}
-      >
-        <ArrowRight className="h-3 w-3" aria-hidden="true" />
-        --
-      </span>
-    );
-  }
+  if (delta === null || !Number.isFinite(delta)) return null;
   const rounded = Math.round(delta * 1000) / 10;
   const up = rounded > 0;
   const flat = rounded === 0;
   const Icon = up ? ArrowUpRight : flat ? ArrowRight : ArrowDownRight;
+  if (variant === "text") {
+    const colorClass = flat ? "text-muted-foreground" : up ? "text-delta-up" : "text-delta-down";
+    return (
+      <span
+        className={`inline-flex items-center gap-0.5 text-sm font-semibold ${colorClass} ${className}`}
+      >
+        <Icon className="h-3.5 w-3.5" aria-hidden="true" />
+        {Math.abs(rounded)}%
+      </span>
+    );
+  }
   const colorClass = flat
     ? "text-muted-foreground bg-muted"
     : up

@@ -1,5 +1,5 @@
 {
-  "name": "count",
+  "name": "discord-analytics-frontend",
   "type": "module",
   "version": "0.1.1",
   "scripts": {

@@ -15,11 +15,13 @@ const PROD_ALLOWED_ORIGINS = ["https://ymkw.top", "https://www.ymkw.top"];
 const DEV_ALLOWED_ORIGINS = ["http://localhost:4321", "http://127.0.0.1:4321"];
 
 // これらのHostはギルドDomainsが未登録でも既定ギルドへフォールバックする (過渡期互換)
-const DEFAULT_GUILD_HOSTS = ["api.ymkw.top", "localhost", "127.0.0.1", "::1", "ymkw-backend"];
+const DEFAULT_GUILD_HOSTS = ["api.ymkw.top", "localhost", "127.0.0.1", "::1", "discord-analytics-backend"];
 
 export interface AppConfig {
   guildId: string;
   defaultGuildHosts: Set<string>;
+  /** 公開サイトのリクエストHost (ウォーマーの内部リクエストがギルド解決に使う) */
+  publicHost: string;
   dbDsn: string;
   apiSecret: string;
   adminSessionSecret: string;
@@ -235,6 +237,7 @@ export async function loadConfig(options: ConfigLoadOptions = {}): Promise<AppCo
         .map((host) => host.trim().toLowerCase())
         .filter((host) => host.length > 0),
     ),
+    publicHost: (process.env.PUBLIC_REQUEST_HOST || "analytics.ymkw.top").trim(),
     dbDsn: await adjustDbDsn(rawDsn, options),
     apiSecret,
     adminSessionSecret,

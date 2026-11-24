@@ -52,17 +52,38 @@ export function Avatar({
   );
 }
 
+/** 1〜3位のシンプルなメダル (金・銀・銅のフラットな円 + 番号) */
+const MEDAL_STYLES = [
+  { base: "#E6B94E", text: "#7A5410" },
+  { base: "#C6CCD4", text: "#525A66" },
+  { base: "#D19A66", text: "#6B4520" },
+] as const;
+
+function RankMedal({ rank }: { rank: 1 | 2 | 3 }) {
+  const c = MEDAL_STYLES[rank - 1];
+  return (
+    <svg viewBox="0 0 24 24" className="h-6 w-6 shrink-0" role="img" aria-label={`${rank}位`}>
+      <circle cx="12" cy="12" r="10" fill={c.base} />
+      <text
+        x="12"
+        y="12.5"
+        textAnchor="middle"
+        dominantBaseline="central"
+        fontSize="11"
+        fontWeight="800"
+        fill={c.text}
+      >
+        {rank}
+      </text>
+    </svg>
+  );
+}
+
 export interface RankEntry extends DiscordIdentity {
   user_id: string;
   display_name: string;
   count: number;
 }
-
-const RANK_STYLES = [
-  "bg-amber-100 text-amber-700",
-  "bg-gray-200 text-gray-600",
-  "bg-orange-100 text-orange-700",
-] as const;
 
 export default function RankTopCard({
   title,
@@ -71,7 +92,10 @@ export default function RankTopCard({
   items,
   max = 5,
   hrefBase,
+  hrefQuery,
   emptyText = "データがありません",
+  bare = false,
+  loading = false,
 }: {
   title: string;
   note?: string;
@@ -80,27 +104,39 @@ export default function RankTopCard({
   max?: number;
   /** 指定時は各行がこのパス (ユーザーIDを連結) へのリンクになる */
   hrefBase?: string;
+  /** リンクに付けるクエリ (例: "m=2026-5")。期間を維持するために渡す */
+  hrefQuery?: string;
   emptyText?: string;
+  /** trueでカード枠なし (拡大ダイアログ内用) */
+  bare?: boolean;
+  /** trueで行をスケルトン表示 (タイトル・注記はそのまま出す) */
+  loading?: boolean;
 }) {
   return (
-    <div className="app-card-padded flex h-full min-w-0 flex-col">
+    <div className={`${bare ? "" : "app-card-padded app-tile"} flex h-full min-w-0 flex-col`}>
       <div>
         <p className="text-sm font-black text-foreground">{title}</p>
         {note && <p className="mt-0.5 text-xs font-bold text-muted-foreground">{note}</p>}
       </div>
-      {items.length === 0 ? (
+      {loading ? (
+        <ol className="mt-3 flex-1 space-y-1" aria-hidden="true">
+          {Array.from({ length: max }, (_, i) => (
+            <li key={i} className="flex items-center gap-2.5 rounded-xl px-2 py-1.5">
+              <div className="skeleton h-6 w-6 shrink-0 rounded-md" />
+              <div className="skeleton h-8 flex-1 rounded-lg" />
+              <div className="skeleton h-4 w-16 shrink-0 rounded-md" />
+            </li>
+          ))}
+        </ol>
+      ) : items.length === 0 ? (
         <p className="py-8 text-center text-sm text-muted-foreground">{emptyText}</p>
       ) : (
-        <ol className="mt-3 flex-1 space-y-1">
+        <ol className="data-in mt-3 flex-1 space-y-1">
           {items.slice(0, max).map((item, index) => {
             const rank = index + 1;
             const badge =
               rank <= 3 ? (
-                <span
-                  className={`grid h-6 w-6 shrink-0 place-items-center rounded-md text-xs font-black ${RANK_STYLES[rank - 1]}`}
-                >
-                  {rank}
-                </span>
+                <RankMedal rank={rank as 1 | 2 | 3} />
               ) : (
                 <span className="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-muted text-xs font-black text-muted-foreground">
                   {rank}
@@ -112,7 +148,7 @@ export default function RankTopCard({
                 <span className="flex min-w-0 flex-1 overflow-hidden">
                   <span
                     style={nameplateBackgroundStyle(item.nameplate)}
-                    className="inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-lg px-1.5 py-0.5"
+                    className="inline-flex min-h-9 min-w-0 max-w-full items-center gap-1.5 rounded-lg px-1.5 py-0.5"
                   >
                     {/* 日付などユーザー以外のエントリー (avatar/decoration未指定) はアイコンなしで表示 */}
                     {(item.avatar !== undefined || item.avatar_decoration !== undefined) && (
@@ -131,7 +167,7 @@ export default function RankTopCard({
             return hrefBase ? (
               <li key={item.user_id}>
                 <a
-                  href={`${hrefBase}${item.user_id}`}
+                  href={`${hrefBase}${item.user_id}${hrefQuery ? `?${hrefQuery}` : ""}`}
                   className="flex items-center gap-2.5 rounded-xl px-2 py-1.5 transition-colors hover:bg-muted"
                 >
                   {body}

@@ -34,6 +34,6 @@ export function createBackendPool(dsn: string): Pool {
     max: 8,
     idleTimeoutMillis: 30_000,
     ssl: resolveSslOptions(dsn),
-    options: "-c application_name=ymkw-backend -c statement_timeout=60000",
+    options: "-c application_name=discord-analytics-backend -c statement_timeout=60000",
   });
 }

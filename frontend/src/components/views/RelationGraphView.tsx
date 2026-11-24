@@ -37,7 +37,7 @@ interface GraphEdge {
   weight: number;
 }
 
-/** VRCX-0のMutual Friendsグラフと同じコミュニティパレット (dark/light) */
+/** コミュニティパレット (dark/light) */
 const DARK_PALETTE = [
   "#7c8cf8",
   "#5ec98d",
@@ -63,7 +63,7 @@ const LIGHT_PALETTE = [
 const NAMED_COMMUNITY_LIMIT = 6;
 const MIN_NAMED_SIZE = 3;
 
-/** Louvain用のシード済み乱数 (VRCX-0と同じシードで決定的にする) */
+/** Louvain用のシード済み乱数 (シード固定で決定的にする) */
 function seededRandom(seed: number): () => number {
   let state = seed >>> 0;
   return () => {
@@ -260,6 +260,8 @@ export default function RelationGraphView({
   const communityFilterRef = useRef<number | null>(null);
   /** 界隈一覧カードの開閉 (モバイルでは初期状態を閉じる) */
   const [communitiesOpen, setCommunitiesOpen] = useState(true);
+  /** タイトル横の仕組みチップ (タップで開閉。PCはホバーでも表示) */
+  const [mechanismOpen, setMechanismOpen] = useState(false);
   useEffect(() => {
     if (window.innerWidth < 768) setCommunitiesOpen(false);
   }, []);
@@ -320,7 +322,7 @@ export default function RelationGraphView({
     [data],
   );
 
-  // ===== sigma.js 描画 (VRCX-0: Louvainコミュニティ + ForceAtlas2) =====
+  // ===== sigma.js 描画 (Louvainコミュニティ + ForceAtlas2) =====
   useEffect(() => {
     const container = containerRef.current;
     if (!container || !data || data.nodes.length === 0) return;
@@ -840,39 +842,23 @@ export default function RelationGraphView({
 
   const title = period.isAll ? "全期間" : periodLabel(period);
 
-  // フルスクリーンステージ: グラフが画面全体、パネルはフローティングポップアップ (VRCX-0風)
-  if (!data) {
-    return (
-      <div className="fixed inset-0 top-14 grid place-items-center bg-canvas md:left-72 md:top-0">
-        <div className="h-10 w-72 animate-pulse rounded-xl bg-muted" />
-      </div>
-    );
-  }
-
-  const focusedNode = focused
-    ? (data.nodes.find((node) => node.user_id === focused.id) ?? null)
-    : null;
-
-  if (failed) {
-    return (
-      <div className="fixed inset-0 top-14 grid place-items-center bg-canvas md:left-72 md:top-0">
-        <p className="text-sm font-bold text-muted-foreground">データの読み込みに失敗しました。</p>
-      </div>
-    );
-  }
-
-  return (
+  // フルスクリーンステージ: グラフが画面全体、パネルはフローティングポップアップ
+  // 読み込み中・失敗時も同じステージ構成を維持し、上の帯だけ差し替える
+  const stage = (
     <div className="fixed inset-0 top-14 z-30 flex flex-col bg-canvas md:left-72 md:top-0">
       {/* グラフ (全画面) */}
       <div ref={containerRef} className="absolute inset-0 touch-none" />
 
-      {/* 上部: タイトル + 期間ピッカー + 検索 (モバイルでは縦積み、PCでは横並び) */}
-      <div className="absolute left-3 right-3 top-3 z-20 flex flex-col gap-2 md:left-4 md:right-4 md:top-4 md:flex-row md:items-center md:gap-3">
-        <div className="rounded-xl border border-border bg-card/95 px-3.5 py-2.5 shadow-lg backdrop-blur">
+      {/* 上部: タイトル + 期間ピッカー + 検索 */}
+      <div className="absolute left-3 right-3 top-3 z-20 flex flex-col gap-2 md:left-4 md:right-4 md:top-4 md:flex-row md:flex-wrap md:items-center md:gap-3">
+        <div className="rounded-xl border border-border bg-card/95 px-3.5 py-2.5 shadow-lg backdrop-blur md:shrink-0">
           <p className="text-sm font-black text-foreground">共通のかかわり</p>
           <p className="mt-0.5 text-xs font-bold text-muted-foreground">
-            {title}にアクティブだったメンバー{data.nodes.length}人 ・ 結び付き
-            {data.edges.length}本
+            {failed
+              ? "データの読み込みに失敗しました。時間をおいて再読み込みしてください。"
+              : !data
+                ? "メンバー関係を読み込み中…"
+                : `${title}にアクティブだったメンバー${data.nodes.length}人 ・ 結び付き${data.edges.length}本`}
           </p>
           <p className="mt-0.5 hidden text-[11px] font-bold text-muted-foreground md:block">
             ドラッグで視点移動 / ホイールでズーム / アイコンをクリックで詳細
@@ -880,6 +866,83 @@ export default function RelationGraphView({
         </div>
         <div className="shrink-0 self-start rounded-xl border border-border bg-card/95 p-2 shadow-lg backdrop-blur md:self-auto">
           <PeriodPicker period={period} />
+        </div>
+      </div>
+
+      {/* 読み込み中・失敗時のステージ中央表示 */}
+      {!data && (
+        <div className="pointer-events-none absolute inset-0 z-10 grid place-items-center">
+          <div className="rounded-2xl border border-border bg-card/95 px-6 py-5 shadow-lg">
+            {failed ? (
+              <p className="text-sm font-bold text-muted-foreground">
+                データの読み込みに失敗しました。
+              </p>
+            ) : (
+              <div className="space-y-2.5" aria-hidden="true">
+                <div className="skeleton h-10 w-72 rounded-xl" />
+                <div className="skeleton h-4 w-52 rounded-md" />
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* 読み込み中表示 (レイアウト計算) */}
+      {layoutRunning && (
+        <div className="pointer-events-none absolute inset-0 z-10 grid place-items-center bg-canvas/70">
+          <div className="rounded-full border border-border bg-card px-4 py-2 text-xs font-black text-foreground shadow-lg">
+            {layoutProgress < 50
+              ? "アバター準備中… " + layoutProgress * 2 + "%"
+              : "レイアウト計算中… " + Math.round((layoutProgress - 50) * 2) + "%"}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
+  if (!data) {
+    return stage;
+  }
+
+  const focusedNode = focused
+    ? (data.nodes.find((node) => node.user_id === focused.id) ?? null)
+    : null;
+
+  return (
+    <div className="fixed inset-0 top-14 z-30 flex flex-col bg-canvas md:left-72 md:top-0">
+      {/* グラフ (全画面) */}
+      <div ref={containerRef} className="absolute inset-0 touch-none" />
+
+      {/* 上部: タイトル + 期間ピッカー + 検索 (モバイルでは縦積み、PCでは横並び) */}
+      <div className="absolute left-3 right-3 top-3 z-20 flex flex-col gap-2 md:left-4 md:right-4 md:top-4 md:flex-row md:flex-wrap md:items-center md:gap-3">
+        <div className="rounded-xl border border-border bg-card/95 px-3.5 py-2.5 shadow-lg backdrop-blur md:shrink-0">
+          <p className="flex items-center gap-1.5 text-sm font-black text-foreground">
+            共通のかかわり
+            {/* 仕組みチップ: クリック/ホバーで簡単な説明を出す */}
+            <span className="group relative inline-flex">
+              <button
+                type="button"
+                aria-label="共通のかかわりの仕組み"
+                onClick={() => setMechanismOpen((open) => !open)}
+                className="grid h-4.5 w-4.5 place-items-center rounded-full bg-muted text-[10px] font-black text-muted-foreground transition-colors hover:bg-accent-data hover:text-background"
+              >
+                ?
+              </button>
+              <span
+                className={`pointer-events-none absolute left-1/2 top-7 z-40 w-64 -translate-x-1/2 rounded-xl border border-border bg-card p-3 text-left text-[11px] font-bold leading-relaxed text-muted-foreground opacity-0 shadow-xl transition-opacity group-hover:opacity-100 ${mechanismOpen ? "pointer-events-auto opacity-100" : "group-hover:pointer-events-auto"}`}
+              >
+                発言の共通チャンネルからメンバー同士の結び付きを算出し、
+                行動が似ているメンバーを自動でグループ化 (界隈検出) して表示しています。
+              </span>
+            </span>
+          </p>
+          <p className="mt-0.5 text-xs font-bold text-muted-foreground">
+            {title}にアクティブだったメンバー{data.nodes.length}人 ・ 結び付き
+            {data.edges.length}本
+          </p>
+          <p className="mt-0.5 hidden text-[11px] font-bold text-muted-foreground md:block">
+            ドラッグで視点移動 / ホイールでズーム / アイコンをクリックで詳細
+          </p>
         </div>
         <div className="w-full shrink-0 md:ml-auto md:w-72">
           <input
@@ -919,6 +982,9 @@ export default function RelationGraphView({
               ))}
             </div>
           )}
+        </div>
+        <div className="shrink-0 self-start rounded-xl border border-border bg-card/95 p-2 shadow-lg backdrop-blur md:self-auto">
+          <PeriodPicker period={period} />
         </div>
       </div>
 

@@ -10,7 +10,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
-  defaultPeriod,
+  lastMonthlyHref,
   latestPublishedMonth,
   periodHref,
   recentMonths,
@@ -128,7 +128,8 @@ export default function PeriodPicker({ period }: { period: Period }) {
   };
 
   const allHref = periodHref(pathname, { key: "all", year: null, month: null, isAll: true });
-  const monthModeHref = periodHref(pathname, defaultPeriod());
+  // 月別トグルは直前に選んだ月に戻す (既定月に落として期間を失わないようにする)
+  const backToMonthly = () => go(lastMonthlyHref(pathname, searchParams));
 
   return (
     <div className="flex items-center gap-2">
@@ -136,7 +137,7 @@ export default function PeriodPicker({ period }: { period: Period }) {
       <div className="flex rounded-xl border border-border bg-card p-1 shadow-xs">
         <button
           type="button"
-          onClick={() => go(monthModeHref)}
+          onClick={backToMonthly}
           aria-pressed={!period.isAll}
           className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-colors ${
             !period.isAll

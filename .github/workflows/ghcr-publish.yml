@@ -63,7 +63,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/ymkw-backend
+          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/discord-analytics-backend
           tags: |
             type=raw,value=latest
             type=sha,format=short
@@ -103,7 +103,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/ymkw-bot
+          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/discord-analytics-bot
           tags: |
             type=raw,value=latest
             type=sha,format=short
@@ -143,7 +143,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/ymkw-frontend
+          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/discord-analytics-frontend
           tags: |
             type=raw,value=latest
             type=sha,format=short

@@ -5,7 +5,7 @@ import {
   buildComponentEmbed,
   socialMetadata,
 } from "@/lib/discord-embed";
-import { getGuildBaseUrl, getGuildContext } from "@/lib/guild-context";
+import { DEFAULT_SITE_ORIGIN, getGuildBaseUrl, getGuildContext } from "@/lib/guild-context";
 import { parsePeriod, periodLabel } from "@/lib/period";
 
 export const dynamic = "force-dynamic";
@@ -22,7 +22,7 @@ export async function generateMetadata({ searchParams }: PageProps): Promise<Met
   return socialMetadata({
     title,
     description,
-    url: `${baseUrl ?? "https://ymkw.top"}/members`,
+    url: `${baseUrl ?? DEFAULT_SITE_ORIGIN}/members`,
     imageUrl: guild.iconUrl,
   });
 }
@@ -31,7 +31,7 @@ export default async function MembersPage({ searchParams }: PageProps) {
   const { m } = await searchParams;
   const period = parsePeriod(m);
   const [guild, baseUrl] = await Promise.all([getGuildContext(), getGuildBaseUrl()]);
-  const base = baseUrl ?? "https://ymkw.top";
+  const base = baseUrl ?? DEFAULT_SITE_ORIGIN;
   const subject = guild.name || "Discordサーバー";
   const url = `${base}/members`;
   const label = periodLabel(period);

@@ -1,14 +1,20 @@
 "use client";
 
-import type { ReactNode } from "react";
-import { Area, AreaChart, Bar, BarChart, ResponsiveContainer, Tooltip, XAxis } from "recharts";
+import { useMemo, useState, type ReactNode } from "react";
+import { BarChart } from "@/components/ui/easyui/BarChart";
+import { InteractiveAreaChart, type ChartPoint } from "@/components/ui/easyui/InteractiveAreaChart";
 import DeltaBadge from "./DeltaBadge";
+import TileDialog from "./TileDialog";
+import { DialogStats, type DialogStatItem } from "./dialog-parts";
 
 export interface MiniSeriesPoint {
   label: string;
   value: number;
-  compare?: number | null;
+  /** 拡大ダイアログの日付軸用 (UTC ms)。未指定ならラベル順 */
+  date?: number;
 }
+
+const ACCENT = "#3964fe";
 
 export default function StatCard({
   title,
@@ -16,9 +22,12 @@ export default function StatCard({
   unit,
   delta,
   series,
-  compareSeriesLabel,
   footer,
   chartType = "area",
+  showMiniChart = true,
+  loading = false,
+  dialogStats,
+  dialogExtra,
   formatValue = (v: number) => v.toLocaleString("ja-JP"),
 }: {
   title: string;
@@ -26,108 +35,169 @@ export default function StatCard({
   unit?: string;
   /** 前期間比 (小数)。nullなら非表示 */
   delta?: number | null;
-  /** ミニグラフ用データ */
+  /** ミニグラフ用データ (拡大ダイアログにも使う) */
   series?: MiniSeriesPoint[];
-  compareSeriesLabel?: string;
   footer?: ReactNode;
   chartType?: "area" | "bar";
+  /** カード本体にミニグラフを出すか (falseでも拡大ダイアログには表示される) */
+  showMiniChart?: boolean;
+  /** trueで値・グラフをスケルトン表示 (タイトルはそのまま出す) */
+  loading?: boolean;
+  /** 拡大ダイアログの統計グリッド (curated)。未指定ならseriesから自動生成 */
+  dialogStats?: DialogStatItem[];
+  /** 拡大ダイアログのグラフ下に追加するセクション */
+  dialogExtra?: ReactNode;
   formatValue?: (value: number) => string;
 }) {
-  const hasCompare = series?.some((point) => point.compare !== undefined && point.compare !== null);
+  const [expanded, setExpanded] = useState(false);
+  const values = series?.map((p) => p.value) ?? [];
+  const points: ChartPoint[] = (series ?? []).map((p, i) => ({
+    date: p.date ?? i * 86_400_000,
+    value: p.value,
+  }));
+  const valueText = typeof value === "number" ? formatValue(value) : value;
+
+  // 拡大ダイアログ用の統計グリッド (系列データがある場合のみ)
+  const statItems = useMemo<DialogStatItem[]>(() => {
+    if (!series || series.length < 2) return [];
+    const sum = values.reduce((s, v) => s + v, 0);
+    let maxI = 0;
+    let minI = 0;
+    for (let i = 1; i < values.length; i++) {
+      if (values[i] > values[maxI]) maxI = i;
+      if (values[i] < values[minI]) minI = i;
+    }
+    const first = series[0].label;
+    const last = series[series.length - 1].label;
+    return [
+      {
+        label: "合計",
+        value: formatValue(sum),
+        sub: chartType === "area" ? `${first}〜${last}` : unit,
+      },
+      {
+        label: "平均",
+        value: formatValue(Math.round((sum / values.length) * 10) / 10),
+        sub: unit,
+      },
+      { label: "最大", value: formatValue(values[maxI]), sub: series[maxI].label },
+      { label: "最少", value: formatValue(values[minI]), sub: series[minI].label },
+      ...(chartType === "area"
+        ? [
+            {
+              label: "直近",
+              value: formatValue(values[values.length - 1]),
+              sub: last,
+            },
+          ]
+        : []),
+    ];
+  }, [series, values, chartType, unit, formatValue]);
+
   return (
-    <div className="app-card-padded flex h-full flex-col gap-3">
-      <div className="flex items-start justify-between gap-2">
-        <p className="text-sm font-black text-foreground">{title}</p>
-        {delta !== undefined && <DeltaBadge delta={delta ?? null} />}
+    <div
+      className="app-card-padded app-tile flex h-full flex-col gap-3 focus-visible:border-muted-foreground/60 focus-visible:outline-none"
+      role="button"
+      tabIndex={0}
+      aria-label={`${title}の詳細を開く`}
+      onClick={(e) => {
+        if ((e.target as HTMLElement).closest("a,button")) return;
+        setExpanded(true);
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          setExpanded(true);
+        }
+      }}
+    >
+      <p className="text-sm font-black text-foreground">{title}</p>
+      {/* 前期間比は値の横に添える (Cloudflareダッシュボード風) */}
+      <div>
+        {loading ? (
+          <div className="skeleton h-9 w-32 rounded-lg" />
+        ) : (
+          <div className="data-in flex flex-wrap items-baseline gap-2">
+            <p className="text-3xl font-black tracking-tight text-foreground">
+              {valueText}
+              {unit && (
+                <span className="ml-1.5 text-sm font-bold text-muted-foreground">{unit}</span>
+              )}
+            </p>
+            {delta !== undefined && <DeltaBadge delta={delta ?? null} variant="text" />}
+          </div>
+        )}
       </div>
-      <p className="text-3xl font-black tracking-tight text-foreground">
-        {typeof value === "number" ? formatValue(value) : value}
-        {unit && <span className="ml-1.5 text-sm font-bold text-muted-foreground">{unit}</span>}
-      </p>
-      {series && series.length > 0 && (
-        <div className="-mx-2 -mb-1 mt-auto h-24">
-          <ResponsiveContainer width="100%" height="100%">
-            {chartType === "bar" ? (
-              <BarChart data={series} margin={{ top: 4, right: 2, bottom: 0, left: 2 }}>
-                <XAxis
-                  dataKey="label"
-                  tickLine={false}
-                  axisLine={false}
-                  tick={{ fontSize: 10, fill: "#9ca3af" }}
-                  interval="preserveStartEnd"
-                  minTickGap={24}
-                />
-                <Tooltip
-                  cursor={{ fill: "rgba(0,0,0,0.04)" }}
-                  contentStyle={{
-                    borderRadius: 12,
-                    border: "1px solid rgba(148,155,166,0.35)",
-                    fontSize: 12,
-                    fontWeight: 700,
-                    background: "var(--app-canvas)",
-                    color: "var(--app-sidebar-text-strong)",
-                  }}
-                  formatter={(value) => [formatValue(Number(value)), ""]}
-                  labelFormatter={(label) => String(label)}
-                />
-                {hasCompare && (
-                  <Bar
-                    dataKey="compare"
-                    fill="rgba(148,155,166,0.35)"
-                    radius={[3, 3, 0, 0]}
-                    name={compareSeriesLabel ?? "前期間"}
-                  />
-                )}
-                <Bar dataKey="value" fill="#3964fe" radius={[3, 3, 0, 0]} name={title} />
-              </BarChart>
-            ) : (
-              <AreaChart data={series} margin={{ top: 4, right: 2, bottom: 0, left: 2 }}>
-                <defs>
-                  <linearGradient
-                    id={`stat-${title.replaceAll("/", "-")}`}
-                    x1="0"
-                    y1="0"
-                    x2="0"
-                    y2="1"
-                  >
-                    <stop offset="0%" stopColor="#3964fe" stopOpacity={0.25} />
-                    <stop offset="100%" stopColor="#3964fe" stopOpacity={0.02} />
-                  </linearGradient>
-                </defs>
-                <XAxis
-                  dataKey="label"
-                  tickLine={false}
-                  axisLine={false}
-                  tick={{ fontSize: 10, fill: "#9ca3af" }}
-                  interval="preserveStartEnd"
-                  minTickGap={24}
-                />
-                <Tooltip
-                  contentStyle={{
-                    borderRadius: 12,
-                    border: "1px solid rgba(148,155,166,0.35)",
-                    fontSize: 12,
-                    fontWeight: 700,
-                    background: "var(--app-canvas)",
-                    color: "var(--app-sidebar-text-strong)",
-                  }}
-                  formatter={(value) => [formatValue(Number(value)), ""]}
-                  labelFormatter={(label) => String(label)}
-                />
-                <Area
-                  type="monotone"
-                  dataKey="value"
-                  stroke="#3964fe"
-                  strokeWidth={2}
-                  fill={`url(#stat-${title.replaceAll("/", "-")})`}
-                  name={title}
-                />
-              </AreaChart>
-            )}
-          </ResponsiveContainer>
-        </div>
-      )}
+      {/* ミニグラフは easyui の InteractiveAreaChart (ホバーでcrosshair+ツールチップ) */}
+      {showMiniChart &&
+        (loading ? (
+          <div className="mt-auto">
+            <div className="skeleton h-[110px] rounded-xl" />
+          </div>
+        ) : (
+          values.length > 1 && (
+            <div className="data-in mt-auto">
+              <InteractiveAreaChart
+                data={{ 値: points }}
+                showHeader={false}
+                height={110}
+                color={ACCENT}
+                locale="ja-JP"
+                formatValue={formatValue}
+                ariaLabel={`${title}のミニグラフ`}
+              />
+            </div>
+          )
+        ))}
       {footer}
+      <TileDialog open={expanded} onClose={() => setExpanded(false)} label={title}>
+        <div className="pr-7">
+          <p className="text-sm font-black text-foreground">{title}</p>
+          <div className="mt-1 flex flex-wrap items-baseline gap-2">
+            <p className="text-3xl font-black tracking-tight text-foreground">
+              {valueText}
+              {unit && (
+                <span className="ml-1.5 text-sm font-bold text-muted-foreground">{unit}</span>
+              )}
+            </p>
+            {delta !== undefined && <DeltaBadge delta={delta ?? null} variant="text" />}
+          </div>
+          {(dialogStats ?? statItems).length > 0 && (
+            <DialogStats className="mt-4" items={dialogStats ?? statItems} />
+          )}
+          {points.length > 0 ? (
+            <div className="mt-4">
+              {chartType === "bar" ? (
+                <BarChart
+                  data={(series ?? []).map((p) => ({ label: p.label, value: p.value }))}
+                  series={[{ key: "value", label: title, color: ACCENT }]}
+                  height={280}
+                  formatValue={(n) => `${formatValue(n)}${unit ?? ""}`}
+                  formatTick={(n) => n.toLocaleString("ja-JP")}
+                  showLegend={false}
+                  ariaLabel={`${title}の拡大グラフ`}
+                />
+              ) : (
+                <InteractiveAreaChart
+                  data={{ 値: points }}
+                  showHeader={false}
+                  height={280}
+                  color={ACCENT}
+                  locale="ja-JP"
+                  formatValue={formatValue}
+                  ariaLabel={`${title}の拡大グラフ`}
+                />
+              )}
+            </div>
+          ) : (
+            <p className="py-10 text-center text-sm text-muted-foreground">
+              このカードにはグラフデータがありません
+            </p>
+          )}
+          {dialogExtra && <div className="mt-5">{dialogExtra}</div>}
+          {footer && <div className="mt-3">{footer}</div>}
+        </div>
+      </TileDialog>
     </div>
   );
 }

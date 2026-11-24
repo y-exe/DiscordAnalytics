@@ -1,5 +1,5 @@
 {
-  "name": "ymkw-scripts",
+  "name": "discord-analytics-scripts",
   "version": "1.0.0",
   "private": true,
   "description": "Discord Server Web Analytics - admin password hash generator",

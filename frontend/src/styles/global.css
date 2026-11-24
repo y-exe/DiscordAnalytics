@@ -121,6 +121,128 @@
   @apply rounded-2xl border border-transparent bg-sidebar p-5;
 }
 
+/* クリック可能なタイル (拡大ダイアログあり): ホバーで枠をわずかに強調 */
+.app-tile {
+  @apply cursor-pointer transition-colors duration-150 hover:border-muted-foreground/40;
+}
+
+/* カード拡大ダイアログ (ネイティブ <dialog>)。
+   ダイアログ自体を全画面オーバーレイにして、パネル外クリックで閉じられるようにする */
+.tile-dialog {
+  padding: 1rem;
+  border: none;
+  background: transparent;
+}
+.tile-dialog[open] {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  width: 100%;
+  max-width: none;
+  height: 100dvh;
+  max-height: none;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+.tile-dialog::backdrop {
+  background: rgb(0 0 0 / 45%);
+}
+.tile-dialog[open]::backdrop {
+  animation: tile-dialog-fade 0.16s ease-out;
+}
+.tile-dialog[open] .tile-panel {
+  animation: tile-dialog-in 0.16s ease-out;
+}
+@keyframes tile-dialog-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+}
+@keyframes tile-dialog-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+/* 読み込み中の不確定プログレスバー */
+.loading-bar {
+  animation: loading-slide 1.1s ease-in-out infinite;
+}
+@keyframes loading-slide {
+  from {
+    transform: translateX(-120%);
+  }
+  to {
+    transform: translateX(420%);
+  }
+}
+
+/* 読み込み中のプレースホルダー (shimmer) */
+:root {
+  --skeleton: rgb(0 0 0 / 0.055);
+  --skeleton-strong: rgb(0 0 0 / 0.035);
+}
+.dark {
+  --skeleton: rgb(255 255 255 / 0.055);
+  --skeleton-strong: rgb(255 255 255 / 0.035);
+}
+
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background-color: var(--skeleton);
+}
+.skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background-image: linear-gradient(90deg, transparent, var(--skeleton-strong), transparent);
+  animation: skeleton-shimmer 1.4s ease-in-out infinite;
+}
+@keyframes skeleton-shimmer {
+  to {
+    transform: translateX(100%);
+  }
+}
+
+/* スケルトン→実データへの差し替え時のフェードイン (ふわっと表示) */
+.data-in {
+  animation: data-in 0.3s ease both;
+}
+@keyframes data-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* コンテンツの出現アニメーション (Reorderable以外の場所で使用) */
+.anim-rise {
+  animation: rise-in 0.45s cubic-bezier(0.23, 1, 0.32, 1) both;
+}
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .loading-bar,
+  .anim-rise,
+  .skeleton::after,
+  .data-in {
+    animation: none;
+  }
+}
+
 /* サイドバーはテーマに関係なくダークの見た目に固定 */
 .sidebar-dark {
   --app-sidebar: #1b1b1c;
@@ -249,11 +371,6 @@
   font-style: normal;
   font-display: swap;
 }
-@font-face {
-  font-family: "ZakkuriGothic";
-  src: url("/fonts/ZakkuriGothicFree-Black.otf") format("opentype");
-  font-display: swap;
-}
 .custom-scrollbar::-webkit-scrollbar {
   width: 6px;
 }
@@ -264,263 +381,6 @@
 @media (max-width: 767px) {
   .mobile-content-pt {
     padding-top: 8.5rem !important;
-  }
-}
-
-.home {
-  --frame-inset: clamp(12px, 1.5vw, 24px);
-  --content-inset: calc(var(--frame-inset) + clamp(18px, 2.2vw, 34px));
-  min-height: 100svh;
-  overflow: hidden;
-  background: #030303;
-  color: #f6f4ef;
-  font-family: "LINE Seed JP", Arial, sans-serif;
-  font-weight: 800;
-}
-.home * {
-  box-sizing: border-box;
-}
-.tick {
-  position: fixed;
-  inset: -20vh -12vw;
-  z-index: 1;
-  display: grid;
-  align-content: center;
-  gap: 3vh;
-  overflow: hidden;
-  transform: rotate(-11deg) scale(1.15);
-  filter: blur(2.4px);
-  opacity: 0.9;
-  pointer-events: none;
-}
-.row {
-  display: flex;
-  width: max-content;
-  white-space: nowrap;
-  color: transparent;
-  -webkit-text-stroke: 2px rgba(255, 255, 255, 0.48);
-  font-size: clamp(66px, 9vw, 175px);
-  line-height: 0.75;
-  letter-spacing: -0.09em;
-  animation: home-ticker-left 22s linear infinite;
-}
-.row:nth-child(even) {
-  animation-name: home-ticker-right;
-  animation-duration: 28s;
-}
-.row span {
-  padding-right: 1.2vw;
-}
-@keyframes home-ticker-left {
-  to {
-    transform: translate3d(-33.333%, 0, 0);
-  }
-}
-@keyframes home-ticker-right {
-  from {
-    transform: translate3d(-33.333%, 0, 0);
-  }
-  to {
-    transform: translate3d(0, 0, 0);
-  }
-}
-.model {
-  position: fixed;
-  inset: 0;
-  z-index: 3;
-  pointer-events: none;
-  overflow: hidden;
-}
-.model canvas {
-  display: block;
-  width: 100%;
-  height: 100%;
-  filter: blur(2.4px) saturate(0.84) brightness(1.08) contrast(0.97);
-}
-.content-shade {
-  position: fixed;
-  inset: 0;
-  z-index: 4;
-  pointer-events: none;
-  background: linear-gradient(90deg, rgb(0 0 0 / 48%), rgb(0 0 0 / 22%) 42%, transparent 65%);
-}
-.frame {
-  position: fixed;
-  inset: var(--frame-inset);
-  z-index: 8;
-  border: 1px solid rgba(255, 255, 255, 0.38);
-  pointer-events: none;
-}
-.home-intro {
-  --yamakawa-size: clamp(180px, 29svh, 280px);
-  position: relative;
-  z-index: 10;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  width: 50%;
-  min-height: 100svh;
-  padding: 52px 28px 64px;
-  text-align: center;
-}
-.red-box {
-  width: var(--yamakawa-size);
-  height: var(--yamakawa-size);
-  display: grid;
-  place-items: center;
-  background: #f00;
-  border-radius: 22%;
-  box-shadow: 0 25px 50px -12px rgba(239, 68, 68, 0.4);
-}
-.char-container {
-  width: 82%;
-  height: 82%;
-  position: relative;
-}
-.char-container span {
-  position: absolute;
-  display: grid;
-  place-items: center;
-  width: 50%;
-  height: 50%;
-  color: #fff;
-  font-family: ZakkuriGothic, sans-serif;
-  font-size: calc(var(--yamakawa-size) * 0.82 * 0.52);
-  line-height: 0.65;
-}
-.char-container span:nth-child(1) {
-  left: 0;
-  top: 0;
-}
-.char-container span:nth-child(2) {
-  left: 50%;
-  top: 0;
-}
-.char-container span:nth-child(3) {
-  left: 0;
-  top: 50%;
-}
-.char-container span:nth-child(4) {
-  left: 50%;
-  top: 50%;
-}
-.site-title {
-  margin: 24px 0 0;
-  color: #fff;
-  font-family: Outfit, Arial, sans-serif;
-  font-size: clamp(52px, 5.3vw, 84px);
-  line-height: 1;
-  letter-spacing: -0.045em;
-}
-.site-title span {
-  border-bottom: 0.17em solid #ffb21c;
-}
-.site-copy {
-  margin: 20px 0 64px;
-  color: #fff;
-  font-size: clamp(22px, 2.2vw, 32px);
-  line-height: 1.3;
-  text-shadow: 0 2px 12px #000;
-}
-.navigation {
-  display: flex;
-  justify-content: center;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-.event-link {
-  margin-top: 20px;
-}
-.home-action {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.65em;
-  min-height: 66px;
-  padding: 0.42em 0.72em 0.5em;
-  color: #fff;
-  background: rgb(0 0 0 / 78%);
-  font-size: clamp(19px, 2vw, 30px);
-  text-decoration: none;
-  transition: background-color 0.2s;
-}
-.home-action:hover {
-  background: #252525;
-}
-.home-action--event {
-  background: linear-gradient(112deg, #5b2cb7, #8e43c9 48%, #d24aac);
-  padding-inline: 1em;
-}
-.social-bar,
-.legal-links,
-.copyright {
-  position: fixed;
-  z-index: 10;
-  right: var(--content-inset);
-  font-family: Outfit, Arial, sans-serif;
-}
-.social-bar {
-  top: var(--content-inset);
-  display: flex;
-  gap: clamp(1rem, 2.5vw, 2.25rem);
-}
-.social-bar a,
-.legal-links a {
-  color: #fff;
-  text-decoration: none;
-}
-.social-bar a:hover,
-.legal-links a:hover {
-  opacity: 0.7;
-}
-.legal-links {
-  bottom: calc(var(--content-inset) + clamp(30px, 2.25vw, 38px));
-  display: flex;
-  gap: 0.85em;
-  font-size: clamp(17px, 1.55vw, 22px);
-}
-.copyright {
-  bottom: var(--content-inset);
-  color: #fff;
-  font-size: clamp(17px, 1.55vw, 22px);
-}
-.site-loader {
-  position: fixed;
-  z-index: 10000;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  background: #000;
-  color: #fff;
-}
-.site-loader-grid {
-  font:
-    800 clamp(64px, 10vw, 130px) / 1 ZakkuriGothic,
-    sans-serif;
-  letter-spacing: 0.2em;
-}
-@media (max-width: 760px) {
-  .row {
-    font-size: 28vw;
-  }
-  .home-intro {
-    width: 100%;
-    padding-inline: calc(var(--frame-inset) + 16px);
-  }
-  .content-shade {
-    background: rgb(0 0 0 / 46%);
-  }
-  .social-bar {
-    gap: 0.55rem;
-  }
-  .social-bar a {
-    font-size: 0;
-  }
-  .social-bar a::first-letter {
-    font-size: 1rem;
-  }
-  .site-copy {
-    margin-bottom: 42px;
   }
 }
 

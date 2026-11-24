@@ -14,6 +14,7 @@ export interface BackendRuntime {
   config: AppConfig;
   pool: Pool;
   startWarmLoop(): () => void;
+
   close(): Promise<void>;
 }
 
@@ -114,7 +115,7 @@ export async function createBackendRuntime(
   await initializeLoginLimits(pool);
 
   const cache = new SafeDiskCache(
-    options.cacheDir ?? path.join(os.tmpdir(), "ymkw_api_diskcache_v14"),
+    options.cacheDir ?? path.join(os.tmpdir(), "discord_analytics_diskcache_v14"),
     config.cacheSizeLimitBytes,
   );
 
@@ -131,7 +132,7 @@ export async function createBackendRuntime(
     app,
     config,
     pool,
-    startWarmLoop: () => startWarmLoop(app),
+    startWarmLoop: () => startWarmLoop(app, config),
     close: async () => {
       await pool.end().catch(() => {});
       cache.close();

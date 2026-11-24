@@ -1,5 +1,9 @@
 import { fetchAPI } from "./api";
 
+/** ドメイン解決に失敗した時 (ビルド時等) のサイト既定URL。
+ * 実運用ドメインはバックエンドのguild-contextが返す値を優先する */
+export const DEFAULT_SITE_ORIGIN = "https://yexe.top";
+
 export interface GuildContextInfo {
   guildId: string;
   name: string;
@@ -81,3 +85,24 @@ export async function getGuildBaseUrl(): Promise<string | null> {
 }
 
 export { FALLBACK as FALLBACK_GUILD_CONTEXT };
+
+/** Discord CDNのアイコンURLを指定サイズのPNGにする (favicon/apple-touch-icon用)。それ以外のURLはそのまま返す */
+export function sizedIconPng(url: string | null | undefined, size: number): string | null {
+  if (!url) return null;
+  if (!/(cdn\.discordapp\.com|discordapp\.net)/.test(url)) return url;
+  const png = url.replace(/\.(webp|gif|jpe?g)(\?|$)/, ".png$2");
+  return png.includes("?") ? png : `${png}?size=${size}`;
+}
+
+/** 設定ドメインのホスト部からルートドメイン (末尾2ラベル) を取り出す。
+ * analytics.ymkw.top → ymkw.top / 123.yexe.top → yexe.top */
+export function rootDomainOf(domain: string | null | undefined): string | null {
+  if (!domain) return null;
+  const host = domain
+    .replace(/^https?:\/\//, "")
+    .split("/")[0]
+    .toLowerCase();
+  const labels = host.split(".").filter(Boolean);
+  if (labels.length < 2) return null;
+  return labels.slice(-2).join(".");
+}

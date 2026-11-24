@@ -1,5 +1,5 @@
 {
-  "name": "ymkw-backend",
+  "name": "discord-analytics-backend",
   "version": "1.0.0",
   "private": true,
   "description": "Discord Server Web Analytics - REST API (Hono)",

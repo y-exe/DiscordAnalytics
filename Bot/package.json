@@ -1,5 +1,5 @@
 {
-  "name": "ymkw-bot",
+  "name": "discord-analytics-bot",
   "version": "1.0.0",
   "private": true,
   "description": "Discord Server Web Analytics - data collection bot (discord.js)",

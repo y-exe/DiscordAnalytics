@@ -10,7 +10,7 @@ import {
   isApiClient,
   verifyAdminSession,
 } from "./adminAuth";
-import { getClientIp } from "./config";
+import { getClientIp, type AppConfig } from "./config";
 import {
   PUBLIC_PATHS,
   WRITE_METHODS,
@@ -168,7 +168,7 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
   return app;
 }
 
-export function startWarmLoop(app: Hono<AppEnv>): () => void {
+export function startWarmLoop(app: Hono<AppEnv>, cfg: AppConfig): () => void {
   const targets = [
     { name: "ranking_total", path: "/ranking/total" },
     { name: "history_total", path: "/stats/history/total" },
@@ -184,20 +184,24 @@ export function startWarmLoop(app: Hono<AppEnv>): () => void {
     for (const target of targets) {
       const started = performance.now();
       try {
-        const response = await app.request(target.path);
+        // Hostヘッダーを明示しないとギルド解決が失敗し (guildId=''), ウォームが
+        // 毎回500になってキャッシュが温まらない。実サイトと同じホストを渡す。
+        const response = await app.request(target.path, {
+          headers: { "x-forwarded-host": cfg.publicHost },
+        });
         const elapsedMs = Math.round(performance.now() - started);
         if (response.ok) {
           console.log(
-            `${new Date().toISOString()} [INFO] ymkw-api: Warmed cache: ${target.name} (${elapsedMs}ms)`,
+            `${new Date().toISOString()} [INFO] discord-analytics-api: Warmed cache: ${target.name} (${elapsedMs}ms)`,
           );
         } else {
           console.warn(
-            `${new Date().toISOString()} [WARN] ymkw-api: Failed to warm cache: ${target.name} status=${response.status}`,
+            `${new Date().toISOString()} [WARN] discord-analytics-api: Failed to warm cache: ${target.name} status=${response.status}`,
           );
         }
       } catch (error) {
         console.warn(
-          `${new Date().toISOString()} [WARN] ymkw-api: Failed to warm cache: ${target.name}`,
+          `${new Date().toISOString()} [WARN] discord-analytics-api: Failed to warm cache: ${target.name}`,
           error,
         );
       }
@@ -218,4 +222,3 @@ export function startWarmLoop(app: Hono<AppEnv>): () => void {
     if (interval) clearInterval(interval);
   };
 }
-

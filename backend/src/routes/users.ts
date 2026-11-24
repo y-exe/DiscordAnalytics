@@ -32,12 +32,22 @@ import {
   readBodyCapped,
 } from "../http";
 import { dashboardBaseUrl, normalizeHost } from "../guilds";
+import { longestMessage } from "./dialog-extras";
 import type { AppEnv } from "../types";
 import type { RouteHelpers } from "./context";
 
 /** ユーザー (/users/search, /users/members, /users/:userId/insights) */
 export function register(app: Hono<AppEnv>, h: RouteHelpers): void {
-  const { cfg, cache, deps, getPeerIp, requireGuild, getChannelScopeIds, requireMonthAccess, monthCacheControl } = h;
+  const {
+    cfg,
+    cache,
+    deps,
+    getPeerIp,
+    requireGuild,
+    getChannelScopeIds,
+    requireMonthAccess,
+    monthCacheControl,
+  } = h;
 
   app.get("/users/search", async (c) => {
     const q = c.req.query("q");
@@ -71,8 +81,7 @@ export function register(app: Hono<AppEnv>, h: RouteHelpers): void {
         display_name: row.display_name,
         username: row.username,
         avatar: row.avatar_url,
-        // ギルド用アイコンが読めなくなった (退出等) 場合の代替として
-        // ユーザーIDと紐付いたメインのアバターを併せて返す
+        // ギルド用アイコンが読めない (退出等) 場合の代替アバター
         avatar_fallback: row.main_avatar_url ?? null,
         avatar_decoration: row.avatar_decoration_url ?? null,
         nameplate: row.nameplate_asset
@@ -205,6 +214,36 @@ export function register(app: Hono<AppEnv>, h: RouteHelpers): void {
   app.get("/users/members/:year/:month", (c) => memberStats(c, false));
   app.get("/users/members/total", (c) => memberStats(c, true));
 
+  /** プロフィール行をAPIレスポンスの user 形に整形する */
+  const mapProfile = (
+    profile: Record<string, unknown> | undefined,
+    profileUserId: string,
+  ): Record<string, unknown> | null =>
+    profile
+      ? {
+          user_id: profileUserId,
+          display_name: (profile.display_name as string) || "Unknown",
+          username: (profile.username as string) || "unknown",
+          avatar: (profile.avatar_url as string | null) ?? null,
+          avatar_fallback: (profile.main_avatar_url as string | null) ?? null,
+          banner: (profile.banner_url as string | null) ?? null,
+          accent_color: (profile.accent_color as string | null) ?? null,
+          avatar_decoration: (profile.avatar_decoration_url as string | null) ?? null,
+          nameplate: (profile.nameplate_asset as string | null)
+            ? {
+                asset: profile.nameplate_asset as string,
+                palette: (profile.nameplate_palette as string | null) ?? "white",
+              }
+            : null,
+          primary_guild_tag: (profile.primary_guild_tag as string | null) ?? null,
+          primary_guild_badge: (profile.primary_guild_badge_url as string | null) ?? null,
+          joined_at: profile.joined_at ? new Date(profile.joined_at as string).toISOString() : null,
+          premium_since: profile.premium_since
+            ? new Date(profile.premium_since as string).toISOString()
+            : null,
+        }
+      : null;
+
   /** 個人インサイト (メンバー詳細ページ用) */
   const userInsights = async (c: Context, isAll: boolean) => {
     const userId = c.req.param("userId") ?? "";
@@ -266,8 +305,9 @@ export function register(app: Hono<AppEnv>, h: RouteHelpers): void {
 
     const messages = Number(summaryRes.rows[0]?.messages ?? 0);
     if (messages === 0) {
+      // 発言0件でもプロフィールを返す (204ページで名前を出せるように)
       const payload = {
-        user: null,
+        user: mapProfile(profileRes.rows[0] as Record<string, unknown> | undefined, userId),
         messages: 0,
         chars: 0,
         rank: null,
@@ -275,6 +315,7 @@ export function register(app: Hono<AppEnv>, h: RouteHelpers): void {
         channels: [],
         dow: [],
         hours: [],
+        longest_message: null,
         first_at: null,
         last_at: null,
       };
@@ -306,7 +347,7 @@ export function register(app: Hono<AppEnv>, h: RouteHelpers): void {
       rankParams,
     );
 
-    const [dailyRes, channelsRes, dowRes, hoursRes] = await Promise.all([
+    const [dailyRes, channelsRes, dowRes, hoursRes, longest] = await Promise.all([
       pool.query(
         `SELECT DATE(created_at AT TIME ZONE 'Asia/Tokyo') AS d, count(*) AS c, COALESCE(sum(char_count), 0) AS chars
          FROM messages WHERE guild_id = $1 AND user_id = $2 AND is_bot = FALSE ${periodFilter}
@@ -330,36 +371,18 @@ export function register(app: Hono<AppEnv>, h: RouteHelpers): void {
          FROM messages WHERE guild_id = $1 AND user_id = $2 AND is_bot = FALSE ${periodFilter} GROUP BY hour`,
         baseParams,
       ),
+      // ポップアップ用: このメンバーの最長メッセージ (チャンネル名付き)
+      longestMessage(
+        pool,
+        `m.guild_id = $1 AND m.user_id = $2 AND m.is_bot = FALSE ${periodFilter.replaceAll("created_at", "m.created_at")}`,
+        baseParams,
+        { withChannelName: true },
+      ),
     ]);
 
     const profile = profileRes.rows[0];
     const res = {
-      user: profile
-        ? {
-            user_id: userId,
-            display_name: (profile.display_name as string) || "Unknown",
-            username: (profile.username as string) || "unknown",
-            avatar: (profile.avatar_url as string | null) ?? null,
-            avatar_fallback: (profile.main_avatar_url as string | null) ?? null,
-            banner: (profile.banner_url as string | null) ?? null,
-            accent_color: (profile.accent_color as string | null) ?? null,
-            avatar_decoration: (profile.avatar_decoration_url as string | null) ?? null,
-            nameplate: (profile.nameplate_asset as string | null)
-              ? {
-                  asset: profile.nameplate_asset as string,
-                  palette: (profile.nameplate_palette as string | null) ?? "white",
-                }
-              : null,
-            primary_guild_tag: (profile.primary_guild_tag as string | null) ?? null,
-            primary_guild_badge: (profile.primary_guild_badge_url as string | null) ?? null,
-            joined_at: profile.joined_at
-              ? new Date(profile.joined_at as string).toISOString()
-              : null,
-            premium_since: profile.premium_since
-              ? new Date(profile.premium_since as string).toISOString()
-              : null,
-          }
-        : null,
+      user: mapProfile(profile as Record<string, unknown> | undefined, userId),
       messages,
       chars: Number(summaryRes.rows[0]?.chars ?? 0),
       rank: rankRows[0]?.rank !== undefined ? Number(rankRows[0].rank) : null,
@@ -375,6 +398,7 @@ export function register(app: Hono<AppEnv>, h: RouteHelpers): void {
       })),
       dow: dowRes.rows.map((row) => ({ dow: Number(row.dow), count: Number(row.c) })),
       hours: hoursRes.rows.map((row) => ({ hour: Number(row.hour), count: Number(row.c) })),
+      longest_message: longest,
       first_at: summaryRes.rows[0]?.first_at
         ? new Date(summaryRes.rows[0].first_at as string).toISOString()
         : null,

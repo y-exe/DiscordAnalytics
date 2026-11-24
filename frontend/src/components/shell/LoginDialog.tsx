@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { Search, X } from "lucide-react";
 import { ServerTagChip, UserAvatar } from "@/components/views/discord/DiscordIdentity";
 import { fetchAPI } from "@/lib/api";
@@ -15,6 +16,8 @@ interface SearchUser {
   display_name: string;
   username: string;
   avatar: string | null;
+  /** 候補の初期並び順 (発言数順) に使う。検索APIの結果には無い */
+  messages?: number;
   /** ギルド用アイコンが読めない (退出等) 場合の代替: メインのアバター */
   avatar_fallback?: string | null;
   avatar_decoration?: string | null;
@@ -35,7 +38,13 @@ export default function LoginDialog({
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchUser[]>([]);
   const [loading, setLoading] = useState(false);
+  /** 検索前に出す候補 (発言の多い順)。ダイアログを開いたときに取得する */
+  const [candidates, setCandidates] = useState<SearchUser[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
+  const reduce = useReducedMotion();
+  const spring = reduce
+    ? { duration: 0 }
+    : ({ type: "spring", duration: 0.55, bounce: 0.04 } as const);
 
   useEffect(() => {
     if (open) {
@@ -43,6 +52,26 @@ export default function LoginDialog({
       setResults([]);
       setTimeout(() => inputRef.current?.focus(), 50);
     }
+  }, [open]);
+
+  // 候補リスト (発言数順) を取得
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    fetchAPI("/users/members/total", { retries: 0, quiet: true })
+      .then(async (res) => {
+        if (!res.ok) return;
+        const body = (await res.json()) as SearchUser[];
+        if (!cancelled) {
+          setCandidates(
+            [...body].sort((a, b) => (b.messages ?? 0) - (a.messages ?? 0)).slice(0, 50),
+          );
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
   }, [open]);
 
   useEffect(() => {
@@ -85,7 +114,7 @@ export default function LoginDialog({
     setCookie("user_avatar", user.avatar || "");
     setCookie("user_avatar_fallback", user.avatar_fallback || "");
     onClose();
-    window.dispatchEvent(new Event("ymkw:auth-changed"));
+    window.dispatchEvent(new Event("analytics:auth-changed"));
   };
 
   return (
@@ -140,40 +169,70 @@ export default function LoginDialog({
               onChange={(e) => handleSearch(e.target.value)}
             />
           </div>
-          <div className="h-[min(24rem,60dvh)] space-y-1 overflow-y-auto custom-scrollbar">
-            {loading && <p className="py-6 text-center text-sm text-muted-foreground">検索中...</p>}
-            {!loading &&
-              results.map((user) => (
-                <button
-                  key={user.user_id}
-                  type="button"
-                  onClick={() => handleLogin(user)}
-                  className="flex w-full items-center gap-3 rounded-xl p-2.5 text-left transition-colors hover:bg-muted"
-                >
-                  <UserAvatar user={user} size={36} />
-                  <span className="min-w-0">
-                    <span className="flex items-center gap-1.5">
-                      <span className="truncate text-sm font-bold text-foreground">
-                        {user.display_name}
-                      </span>
-                      <ServerTagChip
-                        tag={user.primary_guild_tag}
-                        badge={user.primary_guild_badge}
-                      />
-                    </span>
-                    <span className="block truncate text-xs text-muted-foreground">
-                      @{user.username}
-                    </span>
-                  </span>
-                </button>
-              ))}
-            {!loading && results.length === 0 && query.trim() && (
-              <p className="py-6 text-center text-sm text-muted-foreground">
-                ユーザーが見つかりません。
-                <br />
-                (Botの同期が完了していない可能性があります)
-              </p>
-            )}
+          <div className="relative h-[min(24rem,60dvh)] overflow-y-auto custom-scrollbar">
+            {/* 検索中もリストは壊さず退避表示する (AnimatePresenceが生き残り、絞り込みアニメが効く) */}
+            <div
+              className={`relative space-y-1 transition-opacity ${loading ? "opacity-50" : "opacity-100"}`}
+            >
+              <AnimatePresence mode="popLayout">
+                {(() => {
+                  const list = query.trim() ? results : candidates;
+                  if (list.length === 0) {
+                    return query.trim() && !loading ? (
+                      <motion.p
+                        key="empty"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        className="py-6 text-center text-sm text-muted-foreground"
+                      >
+                        ユーザーが見つかりません。
+                        <br />
+                        (Botの同期が完了していない可能性があります)
+                      </motion.p>
+                    ) : (
+                      <div key="candidates-skeleton" className="space-y-2 p-2" aria-hidden="true">
+                        {Array.from({ length: 6 }, (_, i) => (
+                          <div key={i} className="skeleton h-14 rounded-xl" />
+                        ))}
+                      </div>
+                    );
+                  }
+                  // 絞り込み時はeasyui風に残った行だけ流して切り替える
+                  return list.map((user) => (
+                    <motion.div
+                      key={user.user_id}
+                      layout={reduce ? false : "position"}
+                      initial={{ opacity: 0, y: reduce ? 0 : 6 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, transition: { duration: 0.15 } }}
+                      transition={spring}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => handleLogin(user)}
+                        className="flex w-full items-center gap-3 rounded-xl p-2.5 text-left transition-colors hover:bg-muted"
+                      >
+                        <UserAvatar user={user} size={36} />
+                        <span className="min-w-0">
+                          <span className="flex items-center gap-1.5">
+                            <span className="truncate text-sm font-bold text-foreground">
+                              {user.display_name}
+                            </span>
+                            <ServerTagChip
+                              tag={user.primary_guild_tag}
+                              badge={user.primary_guild_badge}
+                            />
+                          </span>
+                          <span className="block truncate text-xs text-muted-foreground">
+                            @{user.username}
+                          </span>
+                        </span>
+                      </button>
+                    </motion.div>
+                  ));
+                })()}
+              </AnimatePresence>
+            </div>
           </div>
         </div>
       </div>

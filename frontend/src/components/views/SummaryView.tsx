@@ -1,27 +1,37 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import {
-  Area,
-  AreaChart,
-  Bar,
-  BarChart,
-  CartesianGrid,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { RotateCcw } from "lucide-react";
 import PageToolbar from "@/components/shell/PageToolbar";
 import PeriodPicker from "@/components/shell/PeriodPicker";
+import { Button } from "@/components/ui/button";
 import StatCard from "./StatCard";
 import RankTopCard from "./RankTopCard";
-import HeatmapGrid from "./HeatmapGrid";
 import Reorderable from "./Reorderable";
+import { ActivityHeatChart, CategoryBarChart, ChannelShareDonut, DailyTrendChart } from "./charts";
+import { DOW_LABELS, DialogStats, categoryStats, jaNum } from "./dialog-parts";
+import {
+  activeDaysDialog,
+  avgCharsDialog,
+  avgPerDayDialog,
+  channelShareDialog,
+  charsDialog,
+  heatmapDialog as heatDialogContent,
+  hourDialog as hourDialogContent,
+  dowDialog as dowDialogContent,
+  membersDialog,
+  peakHourDialog,
+  topDaysDialog,
+  topMembersDialog,
+  totalMessagesDialog,
+  trendDialog,
+  type DialogData,
+} from "./dialog-contents";
 import { deltaRate } from "./DeltaBadge";
-import { fetchAPI } from "@/lib/api";
-import { useGuildName } from "@/components/shell/AppShell";
-import { periodLabel, previousMonthOf, type Period } from "@/lib/period";
+import { fetchAPI, prefetchAPI } from "@/lib/api";
+import { savedCardOrder, useSequentialReveal } from "@/lib/card-reveal";
+import { useFooterAction, useGuildName, usePendingBar } from "@/components/shell/AppShell";
+import { periodLabel, previousMonthOf, latestPublishedMonth, type Period } from "@/lib/period";
 
 interface RankingUser {
   user_id: string;
@@ -54,6 +64,16 @@ interface Analysis {
   top_dates?: { date: string; count: number }[];
   max_dow: { dow: number; count: number } | null;
   max_hour: { hour: number; count: number } | null;
+  /** ポップアップ用の派生集計 (新API以降で返る) */
+  new_members: number | null;
+  repeat: { one: number; two_three: number; four_seven: number; eight_plus: number } | null;
+  longest_message: {
+    chars: number;
+    display_name: string;
+    date: string;
+    channel_name?: string;
+  } | null;
+  leaders: { date: string; display_name: string; count: number }[] | null;
 }
 
 interface HeatPoint {
@@ -66,6 +86,45 @@ interface PieItem {
   name: string;
   value: number;
 }
+
+/** サマリーページを構成するデータ区分 (カード群ごとに個別リクエストする)。
+ *  extras (ポップアップ用の派生集計) はカード表示に不要なため最後尾で取得する */
+type PartKey = "ranking" | "history" | "analysis" | "prev" | "heatmap" | "channels" | "extras";
+
+/** カードid → 表示に必要なデータ区分。優先順リクエストとカード単位の段階表示に使う */
+const CARD_PARTS: Record<string, PartKey[]> = {
+  "kpi-total": ["history", "analysis"],
+  "kpi-users": ["history", "analysis"],
+  "kpi-chars": ["history", "analysis"],
+  "kpi-avg-day": ["history", "analysis"],
+  "kpi-avg-chars": ["history", "analysis"],
+  "kpi-peak": ["heatmap"],
+  "kpi-channel": ["channels"],
+  "kpi-active-days": ["history"],
+  heatmap: ["heatmap"],
+  trend: ["history"],
+  "rank-messages": ["ranking"],
+  "rank-dates": ["analysis"],
+  "channel-share": ["channels"],
+  dow: ["heatmap"],
+  hour: ["heatmap"],
+};
+
+/** ポップアップ用の派生集計 (/stats/analysis_extras)。カードには使わない */
+interface ExtrasShape {
+  new_members: number | null;
+  repeat: { one: number; two_three: number; four_seven: number; eight_plus: number } | null;
+  longest_message: {
+    chars: number;
+    display_name: string;
+    date: string;
+    channel_name?: string;
+  } | null;
+  leaders: { date: string; display_name: string; count: number }[] | null;
+}
+
+/** 既定のカード順 (保存順がない場合・新規カードのフォールバック) */
+const DEFAULT_CARD_ORDER = Object.keys(CARD_PARTS);
 
 function shortDate(date: string): string {
   const parts = date.split("-");
@@ -81,61 +140,186 @@ export default function SummaryView({
   month: number | null;
   isAll: boolean;
 }) {
-  const [data, setData] = useState<{
-    ranking: RankingUser[];
-    chart: ChartPoint[];
-    analysis: Analysis | null;
-    prevAnalysis: Analysis | null;
-    heatmap: HeatPoint[];
-    channels: PieItem[];
-  } | null>(null);
-  const [failed, setFailed] = useState(false);
+  /** データ区分ごとに到着したレスポンス (カード単位の段階表示用) */
+  const [parts, setParts] = useState<Partial<Record<PartKey, unknown>>>({});
+  const [failedParts, setFailedParts] = useState<Partial<Record<PartKey, boolean>>>({});
+  /** 期間切替中 (既存データを薄めて表示し、取得できたら差し替える) */
+  const [pending, setPending] = useState(false);
+  // 変えるとカードの並び順をデフォルトに戻す (ReorderableのresetToken)
+  const [orderResetToken, setOrderResetToken] = useState(0);
+
+  // フッターにカード順列リセットを登録 (早期リターンより前に呼ぶ。setOrderResetTokenは安定)
+  const resetButton = useMemo(
+    () => (
+      <Button
+        variant="ghost"
+        size="sm"
+        className="gap-1.5 text-muted-foreground"
+        onClick={() => setOrderResetToken((t) => t + 1)}
+      >
+        <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
+        カードの順列をリセット
+      </Button>
+    ),
+    [],
+  );
+  useFooterAction(resetButton);
+
+  // 読み込み中はシェル最上部の共通バーを出す
+  usePendingBar(pending);
+
+  // データが揃ったカードを到着順 (同着なら上から順) に1枚ずつめくる
+  const { ready, reset: resetReveal } = useSequentialReveal(
+    useMemo(
+      () =>
+        savedCardOrder(isAll ? "layout.summary.all" : "layout.summary.month", DEFAULT_CARD_ORDER),
+      [isAll],
+    ),
+    useCallback(
+      (id: string) =>
+        (CARD_PARTS[id] ?? []).every(
+          (key) => parts[key] !== undefined || failedParts[key] === true,
+        ),
+      [parts, failedParts],
+    ),
+  );
+
+  // 到着したデータ区分を従来と同じ data 形にまとめる (既存の導出処理はそのまま動く)。
+  // extras は新backendでは別レスポンス、旧backendでは analysis に同梱されているのでフォールバックする
+  const analysisBody = parts.analysis as Analysis | null | undefined;
+  const data = useMemo(
+    () => ({
+      ranking: (parts.ranking as RankingUser[] | undefined) ?? [],
+      chart: (parts.history as { chart_data?: ChartPoint[] } | undefined)?.chart_data ?? [],
+      analysis: analysisBody ?? null,
+      prevAnalysis: (parts.prev as Analysis | null | undefined) ?? null,
+      heatmap: (parts.heatmap as HeatPoint[] | undefined) ?? [],
+      channels: (parts.channels as PieItem[] | undefined) ?? [],
+      extras:
+        (parts.extras as ExtrasShape | undefined) ??
+        (analysisBody
+          ? {
+              new_members: analysisBody.new_members,
+              repeat: analysisBody.repeat,
+              longest_message: analysisBody.longest_message,
+              leaders: analysisBody.leaders,
+            }
+          : null),
+    }),
+    [parts],
+  );
+  /** 全データ区分が失敗したときだけ全体のエラーバナーを出す */
+  const failedEverything = (
+    ["ranking", "history", "analysis", "heatmap", "channels"] as PartKey[]
+  ).every((key) => failedParts[key] === true);
 
   useEffect(() => {
     let cancelled = false;
-    const load = async () => {
-      setFailed(false);
+    const base = isAll ? "/total" : `/${year}/${month}`;
+    const prev = previousMonthOf({ key: "", year, month, isAll });
+    const paths: Partial<Record<PartKey, string>> = {
+      ranking: isAll ? "/ranking/total" : `/ranking/monthly/${year}/${month}`,
+      history: `/stats/history${base}`,
+      analysis: `/stats/analysis${base}?extras=0`,
+      heatmap: `/stats/heatmap${base}`,
+      channels: `/stats/channels_distribution${base}`,
+      extras: `/stats/analysis_extras${base}`,
+    };
+    if (prev) paths.prev = `/stats/analysis/${prev.year}/${prev.month}?extras=0`;
+
+    // 保存したカード順に沿って、表示に必要なデータから優先的にリクエストする
+    // (上にあるカードほど早くデータを受け取り、早く表示される)
+    const cardOrder = savedCardOrder(
+      isAll ? "layout.summary.all" : "layout.summary.month",
+      DEFAULT_CARD_ORDER,
+    );
+    const order: PartKey[] = [];
+    for (const id of cardOrder) {
+      for (const key of CARD_PARTS[id] ?? []) {
+        if (!order.includes(key)) order.push(key);
+      }
+    }
+    // 前期間比 (deltaバッジ) とポップアップ用おまけは装飾的なので最後に回す
+    if (paths.prev) order.push("prev");
+    order.push("extras");
+
+    // 期間が変わったらめくり状態をリセットする
+    resetReveal();
+
+    setPending(true);
+    let remaining = order.length;
+    const settle = () => {
+      remaining -= 1;
+      if (remaining <= 0 && !cancelled) setPending(false);
+    };
+    const load = async (key: PartKey) => {
+      const path = paths[key];
+      if (!path) {
+        settle();
+        return;
+      }
       try {
-        const base = isAll ? "/total" : `/${year}/${month}`;
-        const prev = previousMonthOf({ key: "", year, month, isAll });
-        const prevBase = prev ? `/${prev.year}/${prev.month}` : null;
-        const rankingPath = isAll ? "/ranking/total" : `/ranking/monthly/${year}/${month}`;
-        const [rankRes, histRes, analysisRes, prevAnalysisRes, heatRes, pieRes] = await Promise.all(
-          [
-            fetchAPI(rankingPath),
-            fetchAPI(`/stats/history${base}`),
-            fetchAPI(`/stats/analysis${base}`),
-            prevBase ? fetchAPI(`/stats/analysis${prevBase}`) : Promise.resolve(null),
-            fetchAPI(`/stats/heatmap${base}`),
-            fetchAPI(`/stats/channels_distribution${base}`),
-          ],
-        );
+        const res = await fetchAPI(path);
         if (cancelled) return;
-        const ranking = rankRes.ok ? ((await rankRes.json()) as RankingUser[]) : [];
-        const history = histRes.ok ? await histRes.json() : null;
-        const analysis = analysisRes.ok ? ((await analysisRes.json()) as Analysis) : null;
-        const prevAnalysis =
-          prevAnalysisRes && prevAnalysisRes.ok
-            ? ((await prevAnalysisRes.json()) as Analysis)
-            : null;
-        const heatmap = heatRes.ok ? ((await heatRes.json()) as HeatPoint[]) : [];
-        const channels = pieRes.ok ? ((await pieRes.json()) as PieItem[]) : [];
-        setData({
-          ranking: Array.isArray(ranking) ? ranking : [],
-          chart: history?.chart_data ?? [],
-          analysis,
-          prevAnalysis,
-          heatmap,
-          channels,
-        });
+        if (res.ok) {
+          const body = await res.json();
+          if (cancelled) return;
+          setParts((p) => ({ ...p, [key]: body }));
+        } else {
+          // analysis は 404 (データなし月) を「空」として扱う (従来同等)
+          if (key === "analysis") setParts((p) => ({ ...p, [key]: null }));
+          if (key !== "analysis" || res.status !== 404) {
+            setFailedParts((f) => ({ ...f, [key]: true }));
+          }
+        }
       } catch {
-        if (!cancelled) setFailed(true);
+        if (!cancelled) {
+          if (key === "analysis") setParts((p) => ({ ...p, [key]: null }));
+          setFailedParts((f) => ({ ...f, [key]: true }));
+        }
+      } finally {
+        settle();
       }
     };
-    void load();
+    // 先頭のリクエストから順に送信する (少し間隔を空けて先頭ほど早く着信するように)
+    const timers = order.map((key, index) => setTimeout(() => void load(key), index * 60));
     return () => {
       cancelled = true;
+      for (const timer of timers) clearTimeout(timer);
     };
+  }, [year, month, isAll]);
+
+  // データ取得後、前後の月のデータを事前取得しておく (期間切替を高速化)
+  useEffect(() => {
+    const bases: string[] = [];
+    if (isAll) {
+      const latest = latestPublishedMonth();
+      bases.push(`/${latest.year}/${latest.month}`);
+    } else if (year && month) {
+      const prev = previousMonthOf({ key: "", year, month, isAll: false });
+      if (prev) bases.push(`/${prev.year}/${prev.month}`);
+      // 翌月 (未公開月を除く)
+      const nextMonth = month === 12 ? 1 : month + 1;
+      const nextYear = month === 12 ? year + 1 : year;
+      const latest = latestPublishedMonth();
+      const published =
+        nextYear < latest.year || (nextYear === latest.year && nextMonth <= latest.month);
+      if (published) bases.push(`/${nextYear}/${nextMonth}`);
+    }
+    if (bases.length === 0) return;
+    // 初期描画を優先させた後に取得
+    const timer = setTimeout(() => {
+      for (const base of bases) {
+        prefetchAPI(`/stats/history${base}`);
+        prefetchAPI(`/stats/analysis${base}?extras=0`);
+        prefetchAPI(`/stats/analysis_extras${base}`);
+        prefetchAPI(`/stats/heatmap${base}`);
+        prefetchAPI(`/stats/channels_distribution${base}`);
+        prefetchAPI(`/ranking/monthly${base}`);
+      }
+    }, 1200);
+    return () => clearTimeout(timer);
+    // 主要データが揃うのを待たず、期間が決まった時点で prefetch を開始する
   }, [year, month, isAll]);
 
   const guildName = useGuildName();
@@ -143,28 +327,50 @@ export default function SummaryView({
     ? "全期間"
     : periodLabel({ key: `${year}-${month}`, year, month, isAll: false });
 
-  const chartData = useMemo(() => {
-    if (!data) return [];
-    return data.chart.map((point) => ({ label: shortDate(point.date), 発言数: point.total }));
+  const trendPoints = useMemo(
+    () => (data?.chart ?? []).map((p) => ({ date: Date.parse(p.date), value: p.total })),
+    [data],
+  );
+
+  // 日別推移ダイアログの補助チャート (旧キャッシュではusers/charsが欠落するので任意)
+  const userTrendPoints = useMemo(() => {
+    const chart = data?.chart ?? [];
+    return chart.some((p) => p.users !== undefined)
+      ? chart.map((p) => ({ date: Date.parse(p.date), value: p.users ?? 0 }))
+      : null;
+  }, [data]);
+
+  const charsTrendPoints = useMemo(() => {
+    const chart = data?.chart ?? [];
+    return chart.some((p) => p.chars !== undefined)
+      ? chart.map((p) => ({ date: Date.parse(p.date), value: p.chars ?? 0 }))
+      : null;
+  }, [data]);
+
+  const heatMatrix = useMemo(() => {
+    const m: number[][] = Array.from({ length: 7 }, () => Array<number>(24).fill(0));
+    for (const p of data?.heatmap ?? []) {
+      if (p.dow >= 0 && p.dow < 7 && p.hour >= 0 && p.hour < 24) m[p.dow][p.hour] = p.count;
+    }
+    return m;
   }, [data]);
 
   const DOW_LABELS = ["日", "月", "火", "水", "木", "金", "土"];
 
   const dowData = useMemo(() => {
     const map = new Map((data?.heatmap ?? []).map((point) => [point.dow, point.count]));
-    return DOW_LABELS.map((label, dow) => ({ label, 発言数: map.get(dow) ?? 0 }));
+    return DOW_LABELS.map((label, dow) => ({ label, value: map.get(dow) ?? 0 }));
   }, [data]);
 
   const hourData = useMemo(() => {
     const map = new Map((data?.heatmap ?? []).map((point) => [point.hour, point.count]));
     return Array.from({ length: 24 }, (_, hour) => ({
       label: String(hour),
-      発言数: map.get(hour) ?? 0,
+      value: map.get(hour) ?? 0,
     }));
   }, [data]);
 
   const daysInPeriod = useMemo(() => {
-    if (!year || !month) return null;
     if (isAll) {
       // 全期間: 実データが存在する最初〜最終日の日数で平均を取る
       const chart = data?.chart ?? [];
@@ -173,51 +379,88 @@ export default function SummaryView({
       const days = Math.round((Math.max(...dates) - Math.min(...dates)) / 86400000) + 1;
       return days > 0 ? days : null;
     }
+    if (year === null || month === null) return null;
     return new Date(year, month, 0).getDate();
   }, [year, month, isAll, data]);
 
-  if (failed) {
-    return (
-      <div className="app-card-padded text-center text-sm text-muted-foreground">
-        データの読み込みに失敗しました。時間をおいて再読み込みしてください。
-      </div>
-    );
-  }
+  // 各カードの拡大ポップアップの中身 (データ到達時に一度だけ構築)
+  const chart = data.chart;
+  const ranking = data.ranking;
+  const channels = data.channels;
+  const dialogs = useMemo(() => {
+    const ctx: DialogData = {
+      daily: chart.map((p) => ({ date: Date.parse(p.date), value: p.total })),
+      dailyUsers: chart.some((p) => p.users !== undefined)
+        ? chart.map((p) => ({ date: Date.parse(p.date), value: p.users ?? 0 }))
+        : undefined,
+      dailyChars: chart.some((p) => p.chars !== undefined)
+        ? chart.map((p) => ({ date: Date.parse(p.date), value: p.chars ?? 0 }))
+        : undefined,
+      matrix: heatMatrix,
+      dowData,
+      hourData,
+      channels: channels.map((c) => ({ name: c.name, value: c.value })),
+      topMembers: ranking.slice(0, 10).map((u) => ({ name: u.display_name, value: u.count })),
+      analysis: data.extras
+        ? {
+            new_members: data.extras.new_members,
+            repeat: data.extras.repeat,
+            longest_message: data.extras.longest_message,
+            leaders: data.extras.leaders,
+          }
+        : undefined,
+      daysInPeriod,
+      isAll,
+    };
+    const topDatesLocal =
+      data.analysis?.top_dates ?? (data.analysis?.max_date ? [data.analysis.max_date] : []);
+    return {
+      total: totalMessagesDialog(ctx),
+      users: membersDialog(ctx),
+      chars: charsDialog(ctx),
+      avgDay: avgPerDayDialog(ctx),
+      avgChars: avgCharsDialog(ctx),
+      peak: peakHourDialog(ctx),
+      channel: channelShareDialog(ctx),
+      activeDays: activeDaysDialog(ctx),
+      heatmap: heatDialogContent(ctx),
+      trend: trendDialog(ctx),
+      topMembers: topMembersDialog(ctx, {
+        items: ranking.slice(0, 10).map((u) => ({ name: u.display_name, count: u.count })),
+        total: data.analysis?.total ?? 0,
+      }),
+      topDays: topDaysDialog(ctx, { topDates: topDatesLocal, total: data.analysis?.total ?? 0 }),
+      dow: dowDialogContent(ctx),
+      hour: hourDialogContent(ctx),
+      share: channelShareDialog(ctx),
+    };
+    // 依存はデータ導出元に追従
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, chart, ranking, channels, heatMatrix, dowData, hourData, daysInPeriod, isAll]);
 
-  if (!data) {
-    return (
-      <div className="space-y-4">
-        <div className="h-9 w-64 animate-pulse rounded-xl bg-muted" />
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          {[0, 1, 2, 3].map((i) => (
-            <div key={i} className="h-44 animate-pulse rounded-2xl bg-muted" />
-          ))}
-        </div>
-        <div className="h-72 animate-pulse rounded-2xl bg-muted" />
-      </div>
-    );
-  }
-
-  const total = data.analysis?.total ?? 0;
-  const uniqueUsers = data.analysis?.unique_users ?? 0;
-  const chars = data.analysis?.char_count ?? null;
-  const prevTotal = data.prevAnalysis?.total ?? null;
-  const prevUsers = data.prevAnalysis?.unique_users ?? null;
-  const prevChars = data.prevAnalysis?.char_count ?? null;
+  const total = data?.analysis?.total ?? 0;
+  const uniqueUsers = data?.analysis?.unique_users ?? 0;
+  const chars = data?.analysis?.char_count ?? null;
+  const prevTotal = data?.prevAnalysis?.total ?? null;
+  const prevUsers = data?.prevAnalysis?.unique_users ?? null;
+  const prevChars = data?.prevAnalysis?.char_count ?? null;
   const avgPerDay = daysInPeriod && total > 0 ? total / daysInPeriod : null;
   const avgDelta =
     avgPerDay !== null && prevTotal !== null && daysInPeriod
       ? deltaRate(avgPerDay, prevTotal / daysInPeriod)
       : null;
 
-  const topChannels = data.channels.slice(0, 6);
-  const channelMax = topChannels[0]?.value ?? 1;
   const avgChars = chars !== null && total > 0 ? Math.round(chars / total) : null;
-  const activeDays = data.chart.length;
-  const peakHour = data.analysis?.max_hour ?? null;
-  const busiestChannel = data.channels[0] ?? null;
+  const activeDays = data?.chart.length ?? 0;
+  const peakHour = data?.analysis?.max_hour ?? null;
+  const busiestChannel = data?.channels[0] ?? null;
+  const topDates =
+    data?.analysis?.top_dates ?? (data?.analysis?.max_date ? [data.analysis.max_date] : []);
 
   const period: Period = { key: isAll ? "all" : `${year}-${month}`, year, month, isAll };
+
+  /** 発言率 (0〜1) を % 表記に。対象が0なら null */
+  const pct = (rate: number | null) => (rate === null ? "—" : `${Math.round(rate * 1000) / 10}%`);
 
   return (
     <div className="space-y-5">
@@ -227,141 +470,260 @@ export default function SummaryView({
         right={<PeriodPicker period={period} />}
       />
 
-      <Reorderable
-        storageKey={isAll ? "layout.summary.all" : "layout.summary.month"}
-        items={[
-          {
-            id: "kpis",
-            node: (
-              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      {/* 読み込み中はシェル最上部の共通バーを出す (usePendingBarで登録済み) */}
+      {/* 主要データが全て失敗したときだけ全体のエラーバナーを出す (カードはスケルトン構成のまま維持) */}
+      {failedEverything && (
+        <div className="app-card-padded text-sm text-muted-foreground">
+          データの読み込みに失敗しました。時間をおいて再読み込みしてください。
+        </div>
+      )}
+
+      <div
+        className={`transition-opacity duration-200 ${
+          pending ? "pointer-events-none opacity-40" : "opacity-100"
+        }`}
+      >
+        <Reorderable
+          replayKey={period.key}
+          resetToken={orderResetToken}
+          storageKey={isAll ? "layout.summary.all" : "layout.summary.month"}
+          items={[
+            {
+              id: "kpi-total",
+              node: (
                 <StatCard
                   title="総発言数"
                   value={total}
                   unit="件"
                   delta={deltaRate(total, prevTotal)}
-                  series={data.chart.map((p) => ({ label: shortDate(p.date), value: p.total }))}
+                  series={chart.map((p) => ({
+                    label: shortDate(p.date),
+                    date: Date.parse(p.date),
+                    value: p.total,
+                  }))}
+                  loading={!ready("kpi-total")}
+                  dialogStats={dialogs?.total.stats}
+                  dialogExtra={dialogs?.total.extra}
                 />
+              ),
+            },
+            {
+              id: "kpi-users",
+              node: (
                 <StatCard
                   title="アクティブメンバー"
                   value={uniqueUsers}
                   unit="人"
                   delta={deltaRate(uniqueUsers, prevUsers)}
                   series={
-                    data.chart.some((p) => p.users !== undefined)
-                      ? data.chart.map((p) => ({ label: shortDate(p.date), value: p.users ?? 0 }))
+                    chart.some((p) => p.users !== undefined)
+                      ? chart.map((p) => ({
+                          label: shortDate(p.date),
+                          date: Date.parse(p.date),
+                          value: p.users ?? 0,
+                        }))
                       : undefined
                   }
+                  loading={!ready("kpi-users")}
+                  dialogStats={dialogs?.users.stats}
+                  dialogExtra={dialogs?.users.extra}
                 />
+              ),
+            },
+            {
+              id: "kpi-chars",
+              node: (
                 <StatCard
                   title="総文字数"
                   value={chars ?? "—"}
                   unit={chars === null ? undefined : "字"}
                   delta={deltaRate(chars, prevChars)}
                   series={
-                    data.chart.some((p) => p.chars !== undefined)
-                      ? data.chart.map((p) => ({ label: shortDate(p.date), value: p.chars ?? 0 }))
+                    chart.some((p) => p.chars !== undefined)
+                      ? chart.map((p) => ({
+                          label: shortDate(p.date),
+                          date: Date.parse(p.date),
+                          value: p.chars ?? 0,
+                        }))
                       : undefined
                   }
+                  loading={!ready("kpi-chars")}
+                  dialogStats={dialogs?.chars.stats}
+                  dialogExtra={dialogs?.chars.extra}
                 />
+              ),
+            },
+            {
+              id: "kpi-avg-day",
+              node: (
                 <StatCard
                   title="1日平均発言数"
                   value={avgPerDay === null ? "—" : Math.round(avgPerDay * 10) / 10}
                   unit="件"
                   delta={avgDelta}
                   chartType="bar"
-                  series={data.chart
+                  series={chart
                     .slice(-14)
                     .map((p) => ({ label: shortDate(p.date), value: p.total }))}
+                  loading={!ready("kpi-avg-day")}
+                  dialogStats={dialogs?.avgDay.stats}
+                  dialogExtra={dialogs?.avgDay.extra}
                 />
-              </div>
-            ),
-          },
-          {
-            id: "extra-kpis",
-            node: (
-              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              ),
+            },
+            {
+              id: "kpi-avg-chars",
+              node: (
                 <StatCard
                   title="平均文字数/発言"
                   value={avgChars ?? "—"}
                   unit={avgChars === null ? undefined : "字"}
+                  showMiniChart={false}
+                  series={
+                    chart.some((p) => p.chars !== undefined)
+                      ? chart.map((p) => ({
+                          label: shortDate(p.date),
+                          date: Date.parse(p.date),
+                          value: p.total > 0 ? Math.round((p.chars ?? 0) / p.total) : 0,
+                        }))
+                      : undefined
+                  }
+                  loading={!ready("kpi-avg-chars")}
+                  dialogStats={dialogs?.avgChars.stats}
+                  dialogExtra={dialogs?.avgChars.extra}
                 />
+              ),
+            },
+            {
+              id: "kpi-peak",
+              node: (
                 <StatCard
                   title="ピーク時間帯"
                   value={peakHour ? `${peakHour.hour}:00台` : "—"}
                   unit={peakHour ? `${peakHour.count.toLocaleString("ja-JP")}件` : undefined}
+                  showMiniChart={false}
+                  series={hourData}
+                  chartType="bar"
+                  formatValue={(v) => v.toLocaleString("ja-JP")}
+                  loading={!ready("kpi-peak")}
+                  dialogStats={dialogs?.peak.stats}
+                  dialogExtra={dialogs?.peak.extra}
                 />
+              ),
+            },
+            {
+              id: "kpi-channel",
+              node: (
                 <StatCard
                   title="最も活発なチャンネル"
                   value={busiestChannel ? `#${busiestChannel.name}` : "—"}
                   unit={
                     busiestChannel ? `${busiestChannel.value.toLocaleString("ja-JP")}件` : undefined
                   }
+                  loading={!ready("kpi-channel")}
+                  dialogStats={dialogs?.channel.stats}
                 />
+              ),
+            },
+            {
+              id: "kpi-active-days",
+              node: (
                 <StatCard
                   title="発言のあった日数"
                   value={activeDays > 0 ? activeDays : "—"}
                   unit={activeDays > 0 ? "日" : undefined}
+                  loading={!ready("kpi-active-days")}
+                  dialogStats={dialogs?.activeDays.stats}
+                  dialogExtra={dialogs?.activeDays.extra}
                 />
-              </div>
-            ),
-          },
-          {
-            id: "activity",
-            node: (
-              <div className="grid gap-4 xl:grid-cols-3">
-                <div className="app-card-padded min-w-0 xl:col-span-2">
-                  <p className="text-sm font-black text-foreground">時間帯別アクティビティ</p>
-                  <p className="mt-0.5 text-xs font-bold text-muted-foreground">
-                    曜日 × 時間帯の発言集中度
-                  </p>
-                  <div className="mt-4">
-                    <HeatmapGrid data={data.heatmap} />
-                  </div>
-                </div>
-                <div className="app-card-padded min-w-0">
-                  <p className="text-sm font-black text-foreground">チャンネル別発言シェア</p>
-                  <p className="mt-0.5 mb-4 text-xs font-bold text-muted-foreground">
-                    発言数の多いチャンネル トップ6
-                  </p>
-                  {topChannels.length === 0 ? (
-                    <p className="py-8 text-center text-sm text-muted-foreground">
-                      データがありません
-                    </p>
+              ),
+            },
+            {
+              id: "heatmap",
+              className: "xl:col-span-2",
+              node: (
+                <div className="app-card-padded app-tile h-full min-w-0">
+                  {!ready("heatmap") ? (
+                    <>
+                      <p className="text-sm font-black text-foreground">時間帯別アクティビティ</p>
+                      <p className="mt-0.5 text-xs font-bold text-muted-foreground">
+                        曜日 × 時間帯の発言集中度
+                      </p>
+                      <div className="mt-3 skeleton h-[220px] rounded-xl" />
+                    </>
                   ) : (
-                    <ul className="space-y-3">
-                      {topChannels.map((channel) => (
-                        <li key={channel.name}>
-                          <div className="mb-1 flex items-center justify-between gap-2 text-xs font-bold">
-                            <span className="truncate text-foreground">#{channel.name}</span>
-                            <span className="shrink-0 text-muted-foreground">
-                              {channel.value.toLocaleString("ja-JP")}
-                            </span>
-                          </div>
-                          <div className="h-1.5 w-full overflow-hidden rounded-full bg-background">
-                            <div
-                              className="h-full rounded-full bg-accent-data"
-                              style={{
-                                width: `${Math.max(4, Math.round((channel.value / channelMax) * 100))}%`,
-                              }}
-                            />
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
+                    <div className="data-in">
+                      <ActivityHeatChart matrix={heatMatrix} />
+                    </div>
                   )}
                 </div>
-              </div>
-            ),
-          },
-          {
-            id: "ranks",
-            node: (
-              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              ),
+              dialog: (
+                <div className="pr-7">
+                  <DialogStats items={dialogs?.heatmap.stats ?? []} />
+                  <div className="mt-4">
+                    <ActivityHeatChart matrix={heatMatrix} />
+                  </div>
+                  {dialogs?.heatmap.extra}
+                </div>
+              ),
+            },
+            {
+              id: "trend",
+              className: "xl:col-span-2",
+              node: (
+                <div className="app-card-padded app-tile flex h-full min-w-0 flex-col">
+                  <p className="text-sm font-black text-foreground">日別の発言数推移</p>
+                  <p className="mt-0.5 mb-2 text-xs font-bold text-muted-foreground">
+                    期間内の每日の発言数
+                  </p>
+                  {!ready("trend") ? (
+                    <div className="min-h-0 flex-1 skeleton rounded-xl" />
+                  ) : (
+                    <div className="data-in min-h-0 flex-1">
+                      <DailyTrendChart points={trendPoints} fill className="h-full" />
+                    </div>
+                  )}
+                </div>
+              ),
+              dialog: (
+                <div className="pr-7">
+                  <DialogStats items={dialogs?.trend.stats ?? []} />
+                  <div className="mt-4">
+                    <DailyTrendChart points={trendPoints} height={300} />
+                  </div>
+                  {dialogs?.trend.extra}
+                  {(userTrendPoints || charsTrendPoints) && (
+                    <div className="mt-5 grid gap-4 lg:grid-cols-2">
+                      {userTrendPoints && (
+                        <div>
+                          <p className="mb-2 text-sm font-black text-foreground">
+                            アクティブメンバー数の推移
+                          </p>
+                          <DailyTrendChart points={userTrendPoints} height={180} />
+                        </div>
+                      )}
+                      {charsTrendPoints && (
+                        <div>
+                          <p className="mb-2 text-sm font-black text-foreground">文字数の推移</p>
+                          <DailyTrendChart points={charsTrendPoints} height={180} />
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ),
+            },
+            {
+              id: "rank-messages",
+              className: "xl:col-span-2",
+              node: (
                 <RankTopCard
                   title="発言王"
                   note="この期間に最も発言したメンバー"
                   unit="件"
-                  items={data.ranking.map((u) => ({
+                  loading={!ready("rank-messages")}
+                  items={ranking.map((u) => ({
                     user_id: u.user_id,
                     display_name: u.display_name,
                     avatar: u.avatar,
@@ -372,14 +734,19 @@ export default function SummaryView({
                     count: u.count,
                   }))}
                   hrefBase="/members/"
+                  hrefQuery={`m=${period.key}`}
                 />
-                <RankTopCard
-                  title="文字数王"
-                  note="最も多く文字を書いたメンバー"
-                  unit="字"
-                  items={[...data.ranking]
-                    .sort((a, b) => b.char_count - a.char_count)
-                    .map((u) => ({
+              ),
+              dialog: (
+                <div className="pr-7">
+                  <DialogStats className="mb-4" items={dialogs?.topMembers.stats ?? []} />
+                  <RankTopCard
+                    bare
+                    title="発言王"
+                    note="この期間に最も発言したメンバー トップ10"
+                    unit="件"
+                    max={10}
+                    items={ranking.map((u) => ({
                       user_id: u.user_id,
                       display_name: u.display_name,
                       avatar: u.avatar,
@@ -387,159 +754,132 @@ export default function SummaryView({
                       nameplate: u.nameplate,
                       primary_guild_tag: u.primary_guild_tag,
                       primary_guild_badge: u.primary_guild_badge,
-                      count: u.char_count,
+                      count: u.count,
                     }))}
-                  hrefBase="/members/"
-                />
+                    hrefBase="/members/"
+                    hrefQuery={`m=${period.key}`}
+                  />
+                  <div className="mt-5">{dialogs?.topMembers.extra}</div>
+                </div>
+              ),
+            },
+            {
+              id: "rank-dates",
+              node: (
                 <RankTopCard
                   title="最多発言日"
                   note="期間内で最も盛り上がった日 トップ5"
                   unit="件"
                   emptyText="データがありません"
-                  items={(
-                    data.analysis?.top_dates ??
-                    (data.analysis?.max_date ? [data.analysis.max_date] : [])
-                  ).map((entry) => ({
+                  loading={!ready("rank-dates")}
+                  items={topDates.map((entry) => ({
                     user_id: `date-${entry.date}`,
                     display_name: entry.date.replaceAll("-", "/"),
                     count: entry.count,
                   }))}
                 />
-              </div>
-            ),
-          },
-          {
-            id: "trend",
-            node: (
-              <div className="app-card-padded">
-                <p className="text-sm font-black text-foreground">日別の発言数推移</p>
-                <p className="mt-0.5 text-xs font-bold text-muted-foreground">
-                  期間内の每日の発言数
-                </p>
-                <div className="mt-4 h-72">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={chartData} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
-                      <CartesianGrid vertical={false} stroke="#e5e7eb" />
-                      <XAxis
-                        dataKey="label"
-                        tickLine={false}
-                        axisLine={false}
-                        tick={{ fontSize: 11, fill: "#9ca3af" }}
-                        minTickGap={28}
-                      />
-                      <YAxis
-                        tickLine={false}
-                        axisLine={false}
-                        tick={{ fontSize: 11, fill: "#9ca3af" }}
-                        width={48}
-                      />
-                      <Tooltip
-                        contentStyle={{
-                          borderRadius: 12,
-                          border: "1px solid rgba(148,155,166,0.35)",
-                          fontSize: 12,
-                          fontWeight: 700,
-                          background: "var(--app-canvas)",
-                          color: "var(--app-sidebar-text-strong)",
-                        }}
-                        formatter={(value) => [`${Number(value).toLocaleString("ja-JP")}件`, ""]}
-                        labelFormatter={(label) => String(label)}
-                      />
-                      <Area
-                        type="monotone"
-                        dataKey="発言数"
-                        stroke="#3964fe"
-                        strokeWidth={2.5}
-                        fill="#3964fe"
-                        fillOpacity={0.08}
-                      />
-                    </AreaChart>
-                  </ResponsiveContainer>
+              ),
+              dialog: (
+                <div className="pr-7">
+                  <DialogStats className="mb-4" items={dialogs?.topDays.stats ?? []} />
+                  <RankTopCard
+                    bare
+                    title="最多発言日"
+                    note="期間内で最も盛り上がった日 トップ5"
+                    unit="件"
+                    emptyText="データがありません"
+                    items={topDates.map((entry) => ({
+                      user_id: `date-${entry.date}`,
+                      display_name: entry.date.replaceAll("-", "/"),
+                      count: entry.count,
+                    }))}
+                  />
+                  <div className="mt-5">{dialogs?.topDays.extra}</div>
                 </div>
-              </div>
-            ),
-          },
-          {
-            id: "distribution",
-            node: (
-              <div className="grid gap-4 lg:grid-cols-2">
-                <div className="app-card-padded">
+              ),
+            },
+            {
+              id: "channel-share",
+              node: (
+                <div className="app-card-padded app-tile flex h-full min-w-0 flex-col">
+                  <p className="text-sm font-black text-foreground">チャンネル別発言シェア</p>
+                  <p className="mt-0.5 mb-2 text-xs font-bold text-muted-foreground">
+                    発言数の多いチャンネル トップ6
+                  </p>
+                  <div className="flex min-h-0 flex-1 flex-col justify-center">
+                    {!ready("channel-share") ? (
+                      <div className="skeleton mx-auto h-[220px] w-[220px] rounded-full" />
+                    ) : (
+                      <div className="data-in">
+                        <ChannelShareDonut channels={channels} showLegend={false} />
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ),
+              dialog: (
+                <div className="pr-7">
+                  <DialogStats className="mb-4" items={dialogs?.share.stats ?? []} />
+                  <p className="mb-3 text-sm font-black text-foreground">チャンネル別発言シェア</p>
+                  <ChannelShareDonut channels={channels} max={12} />
+                </div>
+              ),
+            },
+            {
+              id: "dow",
+              className: "xl:col-span-2",
+              node: (
+                <div className="app-card-padded app-tile h-full min-w-0">
                   <p className="text-sm font-black text-foreground">曜日別の発言数</p>
-                  <div className="mt-3 h-56">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={dowData} margin={{ top: 4, right: 0, bottom: 0, left: 0 }}>
-                        <CartesianGrid vertical={false} stroke="rgba(148,155,166,0.22)" />
-                        <XAxis
-                          dataKey="label"
-                          tickLine={false}
-                          axisLine={false}
-                          tick={{ fontSize: 12, fill: "#9ca3af" }}
-                        />
-                        <YAxis
-                          tickLine={false}
-                          axisLine={false}
-                          tick={{ fontSize: 11, fill: "#9ca3af" }}
-                          width={48}
-                        />
-                        <Tooltip
-                          cursor={{ fill: "rgba(0,0,0,0.04)" }}
-                          contentStyle={{
-                            borderRadius: 12,
-                            border: "1px solid rgba(148,155,166,0.35)",
-                            fontSize: 12,
-                            fontWeight: 700,
-                            background: "var(--app-canvas)",
-                            color: "var(--app-sidebar-text-strong)",
-                          }}
-                          formatter={(value) => [`${Number(value).toLocaleString("ja-JP")}件`, ""]}
-                        />
-                        <Bar dataKey="発言数" fill="#3964fe" radius={[6, 6, 0, 0]} />
-                      </BarChart>
-                    </ResponsiveContainer>
+                  <div className="mt-2">
+                    {!ready("dow") ? (
+                      <div className="skeleton h-[230px] rounded-xl" />
+                    ) : (
+                      <div className="data-in">
+                        <CategoryBarChart data={dowData} height={230} />
+                      </div>
+                    )}
                   </div>
                 </div>
-                <div className="app-card-padded">
+              ),
+              dialog: (
+                <div className="pr-7">
+                  <DialogStats className="mb-4" items={dialogs?.dow.stats ?? []} />
+                  <p className="mb-3 text-sm font-black text-foreground">曜日別の発言数</p>
+                  <CategoryBarChart data={dowData} height={300} />
+                  <div className="mt-5">{dialogs?.dow.extra}</div>
+                </div>
+              ),
+            },
+            {
+              id: "hour",
+              className: "xl:col-span-2",
+              node: (
+                <div className="app-card-padded app-tile h-full min-w-0">
                   <p className="text-sm font-black text-foreground">時間帯別の発言数</p>
-                  <div className="mt-3 h-56">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={hourData} margin={{ top: 4, right: 0, bottom: 0, left: 0 }}>
-                        <CartesianGrid vertical={false} stroke="rgba(148,155,166,0.22)" />
-                        <XAxis
-                          dataKey="label"
-                          tickLine={false}
-                          axisLine={false}
-                          tick={{ fontSize: 10, fill: "#9ca3af" }}
-                          interval={2}
-                        />
-                        <YAxis
-                          tickLine={false}
-                          axisLine={false}
-                          tick={{ fontSize: 11, fill: "#9ca3af" }}
-                          width={48}
-                        />
-                        <Tooltip
-                          cursor={{ fill: "rgba(0,0,0,0.04)" }}
-                          contentStyle={{
-                            borderRadius: 12,
-                            border: "1px solid rgba(148,155,166,0.35)",
-                            fontSize: 12,
-                            fontWeight: 700,
-                            background: "var(--app-canvas)",
-                            color: "var(--app-sidebar-text-strong)",
-                          }}
-                          formatter={(value) => [`${Number(value).toLocaleString("ja-JP")}件`, ""]}
-                          labelFormatter={(label) => `${label}時台`}
-                        />
-                        <Bar dataKey="発言数" fill="#3964fe" radius={[4, 4, 0, 0]} />
-                      </BarChart>
-                    </ResponsiveContainer>
+                  <div className="mt-2">
+                    {!ready("hour") ? (
+                      <div className="skeleton h-[230px] rounded-xl" />
+                    ) : (
+                      <div className="data-in">
+                        <CategoryBarChart data={hourData} height={230} />
+                      </div>
+                    )}
                   </div>
                 </div>
-              </div>
-            ),
-          },
-        ]}
-      />
+              ),
+              dialog: (
+                <div className="pr-7">
+                  <DialogStats className="mb-4" items={dialogs?.hour.stats ?? []} />
+                  <p className="mb-3 text-sm font-black text-foreground">時間帯別の発言数</p>
+                  <CategoryBarChart data={hourData} height={300} />
+                  <div className="mt-5">{dialogs?.hour.extra}</div>
+                </div>
+              ),
+            },
+          ]}
+        />
+      </div>
     </div>
   );
 }

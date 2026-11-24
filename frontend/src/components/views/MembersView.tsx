@@ -2,8 +2,10 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { ChevronLeft, ChevronRight, Search } from "lucide-react";
 import PageToolbar from "@/components/shell/PageToolbar";
+import { usePendingBar } from "@/components/shell/AppShell";
 import PeriodPicker from "@/components/shell/PeriodPicker";
 import {
   BoostBadge,
@@ -37,8 +39,6 @@ interface MemberStat {
   prev: { messages: number; chars: number } | null;
 }
 
-const PAGE_SIZE = 50;
-
 type SortKey = "messages" | "chars" | "name";
 
 export default function MembersView({
@@ -51,6 +51,11 @@ export default function MembersView({
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<SortKey>("messages");
   const [page, setPage] = useState(0);
+  /** 1ページの表示件数 (10/25/50/100)。既定は10 */
+  const [pageSize, setPageSize] = useState(10);
+
+  // 読み込み中はシェル最上部の共通バーを出す
+  usePendingBar(!data && !failed);
 
   const base = period.isAll
     ? "/users/members/total"
@@ -89,9 +94,14 @@ export default function MembersView({
     return rows;
   }, [data, query, sort]);
 
-  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const pageRows = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+  const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const safePage = Math.min(page, pageCount - 1);
+  const pageRows = filtered.slice(safePage * pageSize, (safePage + 1) * pageSize);
   const title = period.isAll ? "全期間" : periodLabel(period);
+  const reduce = useReducedMotion();
+  const spring = reduce
+    ? { duration: 0 }
+    : ({ type: "spring", duration: 0.55, bounce: 0.04 } as const);
 
   return (
     <div>
@@ -137,43 +147,76 @@ export default function MembersView({
         </div>
 
         {failed ? (
-          <p className="p-8 text-center text-sm text-muted-foreground">
-            データの読み込みに失敗しました。
-          </p>
+          <div>
+            <p className="p-6 pb-2 text-center text-sm text-muted-foreground">
+              データの読み込みに失敗しました。時間をおいて再読み込みしてください。
+            </p>
+            <div className="space-y-2 p-4 pt-2" aria-hidden="true">
+              {Array.from({ length: 8 }, (_, i) => (
+                <div key={i} className="skeleton h-9 rounded-lg" />
+              ))}
+            </div>
+          </div>
         ) : !data ? (
-          <div className="space-y-2 p-4">
+          <div className="space-y-2 p-4" aria-hidden="true">
             {Array.from({ length: 10 }, (_, i) => (
-              <div key={i} className="h-9 animate-pulse rounded-lg bg-muted" />
+              <div key={i} className="skeleton h-9 rounded-lg" />
             ))}
           </div>
         ) : (
-          <>
+          <div className="data-in">
             <div className="overflow-x-auto custom-scrollbar">
-              <table className="w-full min-w-[640px] text-sm">
-                <thead>
-                  <tr className="border-b border-border text-left text-xs font-bold text-muted-foreground">
-                    <th className="px-4 py-3">#</th>
-                    <th className="px-4 py-3">メンバー名</th>
-                    <th className="px-4 py-3">発言数</th>
-                    <th className="px-4 py-3">文字数</th>
-                  </tr>
-                </thead>
-                <tbody>
+              <div
+                className="relative min-w-[640px] text-sm"
+                role="table"
+                aria-label="メンバー一覧"
+              >
+                <div
+                  role="row"
+                  className="grid grid-cols-[3.5rem_minmax(0,1fr)_9rem_9rem] border-b border-border px-4 text-left text-xs font-bold text-muted-foreground"
+                >
+                  <div role="columnheader" className="py-3">
+                    #
+                  </div>
+                  <div role="columnheader" className="py-3">
+                    メンバー名
+                  </div>
+                  <div role="columnheader" className="py-3">
+                    発言数
+                  </div>
+                  <div role="columnheader" className="py-3">
+                    文字数
+                  </div>
+                </div>
+                {/* 検索・並び替えで行が絞り替わるときはeasyui風に流す */}
+                <AnimatePresence initial={false} mode="popLayout">
                   {pageRows.map((row) => (
-                    <tr
+                    <motion.div
                       key={row.user_id}
-                      className="border-b border-border/60 transition-colors hover:bg-muted/50"
+                      role="row"
+                      layout={reduce ? false : "position"}
+                      initial={{ opacity: 0, y: reduce ? 0 : 6 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, transition: { duration: 0.15 } }}
+                      transition={spring}
+                      className="grid grid-cols-[3.5rem_minmax(0,1fr)_9rem_9rem] items-center border-b border-border/60 px-4 transition-colors last:border-b-0 hover:bg-muted/50"
                     >
-                      <td className="px-4 py-2 text-xs font-black text-muted-foreground">
+                      <div role="cell" className="py-2 text-xs font-black text-muted-foreground">
                         {row.rank ?? "—"}
-                      </td>
-                      <td className="px-4 py-2">
+                      </div>
+                      <div role="cell" className="min-w-0 py-2">
                         <Link
                           href={`/members/${row.user_id}?m=${period.key}`}
                           style={nameplateBackgroundStyle(row.nameplate)}
-                          className="inline-flex max-w-full items-center gap-2.5 rounded-xl px-2 py-1.5 align-middle"
+                          className="inline-flex max-w-full items-center gap-2.5 rounded-xl px-2 py-1.5"
                         >
-                          <UserAvatar user={row} size={36} />
+                          <Avatar
+                            userId={row.user_id}
+                            src={row.avatar}
+                            fallbackSrc={row.avatar_fallback}
+                            className="h-9 w-9"
+                            alt=""
+                          />
                           <span className="min-w-0">
                             <span className="flex items-center gap-1.5">
                               <NameplateText name={row.display_name} className="max-w-40 text-sm" />
@@ -188,41 +231,51 @@ export default function MembersView({
                             </span>
                           </span>
                         </Link>
-                      </td>
-                      <td className="px-4 py-2">
+                      </div>
+                      <div role="cell" className="min-w-0 py-2">
                         <span className="inline-flex items-center gap-1.5 font-bold text-foreground">
                           {row.messages.toLocaleString("ja-JP")}
                           {row.prev && (
                             <DeltaBadge delta={deltaRate(row.messages, row.prev.messages)} />
                           )}
                         </span>
-                      </td>
-                      <td className="px-4 py-2">
+                      </div>
+                      <div role="cell" className="min-w-0 py-2">
                         <span className="inline-flex items-center gap-1.5 font-bold text-foreground">
                           {row.chars.toLocaleString("ja-JP")}
                           {row.prev && <DeltaBadge delta={deltaRate(row.chars, row.prev.chars)} />}
                         </span>
-                      </td>
-                    </tr>
+                      </div>
+                    </motion.div>
                   ))}
-                  {pageRows.length === 0 && (
-                    <tr>
-                      <td
-                        colSpan={4}
-                        className="px-4 py-10 text-center text-sm text-muted-foreground"
-                      >
-                        該当するメンバーがいません
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
+                </AnimatePresence>
+                {pageRows.length === 0 && (
+                  <p className="px-4 py-10 text-center text-sm text-muted-foreground">
+                    該当するメンバーがいません
+                  </p>
+                )}
+              </div>
             </div>
+
             <div className="flex items-center justify-between border-t border-border p-3 text-xs font-bold text-muted-foreground">
-              <span>
-                {filtered.length.toLocaleString("ja-JP")}人中{" "}
-                {(page * PAGE_SIZE + 1).toLocaleString("ja-JP")}〜
-                {Math.min((page + 1) * PAGE_SIZE, filtered.length).toLocaleString("ja-JP")}人を表示
+              <span className="flex items-center gap-1.5">
+                表示中
+                <select
+                  value={pageSize}
+                  onChange={(e) => {
+                    setPageSize(Number(e.target.value));
+                    setPage(0);
+                  }}
+                  className="h-7 rounded-lg border border-input bg-card px-1.5 text-xs font-bold text-foreground"
+                  aria-label="表示件数"
+                >
+                  {[10, 25, 50, 100].map((n) => (
+                    <option key={n} value={n}>
+                      {n}
+                    </option>
+                  ))}
+                </select>
+                / {filtered.length.toLocaleString("ja-JP")} のメンバー
               </span>
               <span className="flex items-center gap-1">
                 <button
@@ -235,12 +288,12 @@ export default function MembersView({
                   <ChevronLeft className="h-4 w-4" />
                 </button>
                 <span className="px-2">
-                  {page + 1} / {pageCount}
+                  {safePage + 1} / {pageCount}
                 </span>
                 <button
                   type="button"
                   onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
-                  disabled={page >= pageCount - 1}
+                  disabled={safePage >= pageCount - 1}
                   aria-label="次のページ"
                   className="grid h-7 w-7 place-items-center rounded-lg border border-border bg-card transition-colors hover:bg-muted disabled:opacity-30"
                 >
@@ -248,7 +301,7 @@ export default function MembersView({
                 </button>
               </span>
             </div>
-          </>
+          </div>
         )}
       </div>
     </div>

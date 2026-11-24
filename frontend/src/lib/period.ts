@@ -82,3 +82,32 @@ export function previousMonthOf(period: Period): { year: number; month: number }
     ? { year: period.year - 1, month: 12 }
     : { year: period.year, month: period.month - 1 };
 }
+
+const LAST_MONTHLY_KEY = "period.lastMonthly";
+
+/** 選択した月別期間を記憶する (全期間→月別トグルで復帰できるように) */
+export function rememberMonthlyPeriod(mParam: string): void {
+  if (!/^\d{4}-(0?[1-9]|1[0-2])$/.test(mParam)) return;
+  try {
+    sessionStorage.setItem(LAST_MONTHLY_KEY, mParam);
+  } catch {
+    // プライベートモード等では記憶できないだけですぐ問題にはならない
+  }
+}
+
+/** 全期間から月別へ戻るときのhref。直前に選んだ月を優先し、なければ最新公開月 */
+export function lastMonthlyHref(pathname: string, searchParams?: URLSearchParams): string {
+  let saved: string | null = null;
+  try {
+    saved = sessionStorage.getItem(LAST_MONTHLY_KEY);
+  } catch {
+    saved = null;
+  }
+  if (saved && /^\d{4}-(0?[1-9]|1[0-2])$/.test(saved)) {
+    const next = new URLSearchParams(searchParams?.toString() ?? "");
+    next.set("m", saved);
+    const query = next.toString();
+    return query ? `${pathname}?${query}` : pathname;
+  }
+  return periodHref(pathname, defaultPeriod());
+}

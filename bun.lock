@@ -10,7 +10,7 @@
       },
     },
     "Bot": {
-      "name": "ymkw-bot",
+      "name": "discord-analytics-bot",
       "version": "1.0.0",
       "dependencies": {
         "discord.js": "^14.27.0",
@@ -24,7 +24,7 @@
       },
     },
     "backend": {
-      "name": "ymkw-backend",
+      "name": "discord-analytics-backend",
       "version": "1.0.0",
       "dependencies": {
         "dotenv": "^18.0.7",
@@ -40,7 +40,7 @@
       },
     },
     "db": {
-      "name": "ymkw-db-migrate",
+      "name": "discord-analytics-db",
       "version": "1.0.0",
       "dependencies": {
         "dotenv": "^18.0.7",
@@ -53,7 +53,7 @@
       },
     },
     "scripts": {
-      "name": "ymkw-scripts",
+      "name": "discord-analytics-scripts",
       "version": "1.0.0",
       "devDependencies": {
         "@types/node": "^22.20.5",
@@ -125,6 +125,14 @@
 
     "bun-types": ["bun-types@1.4.2", "", { "dependencies": { "@types/node": "*" } }, "sha512-bxV1FgK7yBIzjRe5zBozIM4Bem11ZJcCXSrjWRG3YWLt8yFDePu4cLjpebO8OvPeIE9trbyPF4fuj3Cia4Fj3w=="],
 
+    "discord-analytics-backend": ["discord-analytics-backend@workspace:backend"],
+
+    "discord-analytics-bot": ["discord-analytics-bot@workspace:Bot"],
+
+    "discord-analytics-db": ["discord-analytics-db@workspace:db"],
+
+    "discord-analytics-scripts": ["discord-analytics-scripts@workspace:scripts"],
+
     "discord-api-types": ["discord-api-types@0.38.56", "", {}, "sha512-Hti4RZsGvF5C7SM8rF2MDHtIm0Hyfrlk84GpEA29nj91tvVVMvX+oQSCodu10t2ZcjFGofq8TX0YyC04B2E69Q=="],
 
     "discord.js": ["discord.js@14.27.0", "", { "dependencies": { "@discordjs/builders": "^1.14.1", "@discordjs/collection": "1.5.3", "@discordjs/formatters": "^0.6.2", "@discordjs/rest": "^2.6.2", "@discordjs/util": "^1.2.0", "@discordjs/ws": "^1.2.3", "@sapphire/snowflake": "3.5.5", "discord-api-types": "^0.38.49", "fast-deep-equal": "3.1.3", "lodash.snakecase": "4.1.1", "magic-bytes.js": "^1.13.0", "tslib": "^2.6.3", "undici": "^6.27.0" } }, "sha512-qHbFlFG2N7y3LjPySYsL6A1+BnX6bkTVgo842EX0CqVPk/KTMwZkojPHEXKsQUpWZNyz5BISNHK1cPpQw0+m4A=="],
@@ -184,14 +192,6 @@
     "ws": ["ws@8.22.0", "", { "peerDependencies": { "bufferutil": "^4.0.1", "utf-8-validate": ">=5.0.2" }, "optionalPeers": ["bufferutil", "utf-8-validate"] }, "sha512-Ydggc987+RO0AnWtZ/7Wq9FtNvcrL1b/RO0ud9mWjUPgDrsAAwQSF51sm2hm1XofbU/4jkpGEsLFsZZxU+1DOg=="],
 
     "xtend": ["xtend@4.0.2", "", {}, "sha512-LKYU1iAXJXUgAXn9URjiu+MWhyUXHsvfp7mcuYm9dSUKK0/CjtrUwFAxD82/mCWbtLsGjFIad0wIsod4zrTAEQ=="],
-
-    "ymkw-backend": ["ymkw-backend@workspace:backend"],
-
-    "ymkw-bot": ["ymkw-bot@workspace:Bot"],
-
-    "ymkw-db-migrate": ["ymkw-db-migrate@workspace:db"],
-
-    "ymkw-scripts": ["ymkw-scripts@workspace:scripts"],
 
     "@discordjs/rest/@discordjs/collection": ["@discordjs/collection@2.1.1", "", {}, "sha512-LiSusze9Tc7qF03sLCujF5iZp7K+vRNEDBZ86FT9aQAv3vxMLihUvKvpsCWiQ2DJq1tVckopKm1rxomgNUc9hg=="],
 

@@ -56,7 +56,7 @@ export function logout(): void {
   ["user_id", "user_name", "user_avatar", "user_avatar_fallback"].forEach((name) => {
     document.cookie = `${name}=; path=/; max-age=0; SameSite=Lax`;
   });
-  window.dispatchEvent(new Event("ymkw:auth-changed"));
+  window.dispatchEvent(new Event("analytics:auth-changed"));
 }
 
 /** ログアウト確認ポップアップ (テーマに追従) */
@@ -134,10 +134,10 @@ export default function UserArea({ guild }: { guild: GuildBrand }) {
   useEffect(() => {
     const sync = () => setUser(getLoggedInUser());
     sync();
-    window.addEventListener("ymkw:auth-changed", sync);
+    window.addEventListener("analytics:auth-changed", sync);
     window.addEventListener("focus", sync);
     return () => {
-      window.removeEventListener("ymkw:auth-changed", sync);
+      window.removeEventListener("analytics:auth-changed", sync);
       window.removeEventListener("focus", sync);
     };
   }, []);

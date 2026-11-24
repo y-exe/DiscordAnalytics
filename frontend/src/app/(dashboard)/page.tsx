@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import RestrictedMonthGate from "@/components/views/RestrictedMonthGate";
 import SummaryView from "@/components/views/SummaryView";
-import { getGuildBaseUrl, getGuildContext } from "@/lib/guild-context";
+import { DEFAULT_SITE_ORIGIN, getGuildBaseUrl, getGuildContext } from "@/lib/guild-context";
 import { isPublishedReportMonth } from "@/lib/report-period";
 import { defaultPeriod, parsePeriod, periodLabel } from "@/lib/period";
 
@@ -17,7 +17,7 @@ function canonicalPathForSearch(m: string | undefined): string {
 export async function generateMetadata({ searchParams }: PageProps): Promise<Metadata> {
   const { m } = await searchParams;
   const [guild, baseUrl] = await Promise.all([getGuildContext(), getGuildBaseUrl()]);
-  const base = baseUrl ?? "https://ymkw.top";
+  const base = baseUrl ?? DEFAULT_SITE_ORIGIN;
   const subject = guild.name || "Discordサーバー";
   const period = parsePeriod(m);
   const title = period.isAll ? "総合ランキング" : `${periodLabel(period)}の統計`;

@@ -12,6 +12,7 @@ import {
   YAxis,
 } from "recharts";
 import PageToolbar from "@/components/shell/PageToolbar";
+import { usePendingBar } from "@/components/shell/AppShell";
 import PeriodPicker from "@/components/shell/PeriodPicker";
 import { ServerTagChip, UserAvatar } from "./discord/DiscordIdentity";
 import { fetchAPI } from "@/lib/api";
@@ -166,6 +167,11 @@ export default function CompareView({
 
   const title = period.isAll ? "全期間" : periodLabel(period);
   const hasData = chart && chart.length > 0;
+  /** メンバー選択済みでグラフ取得中 */
+  const loadingChart = selected.length > 0 && chart === null;
+
+  // 読み込み中はシェル最上部の共通バーを出す
+  usePendingBar(loadingChart);
 
   const summary = useMemo(() => {
     if (!chart || selected.length === 0) return [];
@@ -252,7 +258,9 @@ export default function CompareView({
           {title}の每日の発言数を選択メンバー別に表示
         </p>
         <div className="mt-4 h-80">
-          {!hasData ? (
+          {loadingChart ? (
+            <div className="skeleton h-full rounded-xl" aria-hidden="true" />
+          ) : !hasData ? (
             <div className="grid h-full place-items-center text-sm text-muted-foreground">
               メンバーを選択すると比較グラフが表示されます
             </div>
@@ -301,6 +309,23 @@ export default function CompareView({
           )}
         </div>
       </div>
+
+      {loadingChart && (
+        <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-5" aria-hidden="true">
+          {selected.map((user) => (
+            <div key={user.user_id} className="app-card-padded">
+              <div className="flex items-center gap-2">
+                <div className="skeleton h-2.5 w-2.5 rounded-full" />
+                <div className="skeleton h-7 w-7 rounded-full" />
+                <div className="skeleton h-4 flex-1 rounded-md" />
+              </div>
+              <div className="skeleton mt-3 h-8 w-24 rounded-lg" />
+              <div className="skeleton mt-2 h-3 w-32 rounded-md" />
+              <div className="skeleton mt-3 h-3 w-16 rounded-md" />
+            </div>
+          ))}
+        </div>
+      )}
 
       {summary.length > 0 && (
         <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-5">

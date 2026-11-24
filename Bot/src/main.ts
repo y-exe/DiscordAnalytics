@@ -32,7 +32,7 @@ async function main(): Promise<void> {
     }),
   });
 
-  const pool = createPool(dsn, { max: 5, applicationName: "ymkw-bot" });
+  const pool = createPool(dsn, { max: 5, applicationName: "discord-analytics-bot" });
 
   client.once(Events.ClientReady, async (ready) => {
     console.log(`ログイン完了: ${ready.user.tag}`);

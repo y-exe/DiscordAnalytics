@@ -32,12 +32,22 @@ import {
   readBodyCapped,
 } from "../http";
 import { dashboardBaseUrl, normalizeHost } from "../guilds";
+import { leadersPerDay, longestMessage, newMembersCount, repeatBuckets } from "./dialog-extras";
 import type { AppEnv } from "../types";
 import type { RouteHelpers } from "./context";
 
 /** チャンネル (/channels, /channels/stats, /channels/:channelId/insights) */
 export function register(app: Hono<AppEnv>, h: RouteHelpers): void {
-  const { cfg, cache, deps, getPeerIp, requireGuild, getChannelScopeIds, requireMonthAccess, monthCacheControl } = h;
+  const {
+    cfg,
+    cache,
+    deps,
+    getPeerIp,
+    requireGuild,
+    getChannelScopeIds,
+    requireMonthAccess,
+    monthCacheControl,
+  } = h;
 
   app.get("/channels", async (c) => {
     const guildOrError = await requireGuild(c);
@@ -215,7 +225,6 @@ export function register(app: Hono<AppEnv>, h: RouteHelpers): void {
   app.get("/channels/stats/:year/:month", (c) => channelStats(c, false));
   app.get("/channels/stats/total", (c) => channelStats(c, true));
 
-
   const channelInsights = async (c: Context, isAll: boolean) => {
     const channelId = c.req.param("channelId") ?? "";
     if (!/^\d+$/.test(channelId)) return jsonError(422, "Invalid path parameter: channel_id");
@@ -271,6 +280,10 @@ export function register(app: Hono<AppEnv>, h: RouteHelpers): void {
       top_dates: [] as Array<{ date: string; count: number }>,
       first_at: null,
       last_at: null,
+      new_members: null,
+      repeat: null,
+      longest_message: null,
+      leaders: [] as Array<{ date: string; user_id: string; display_name: string; count: number }>,
     };
 
     // チャンネル情報と、スレッド ("親板 / スレ名" 形式) を親チャンネルへ集約するマッピング
@@ -310,39 +323,43 @@ export function register(app: Hono<AppEnv>, h: RouteHelpers): void {
       periodFilter = "AND created_at >= $3 AND created_at < $4";
     }
 
-    const [summaryRes, dailyRes, dowRes, hoursRes, heatRes, membersRes] = await Promise.all([
-      pool.query(
-        `SELECT count(*) AS messages, COALESCE(sum(char_count), 0) AS chars,
+    const periodFilterM = periodFilter.replaceAll("created_at", "m.created_at");
+
+    const [summaryRes, dailyRes, dowRes, hoursRes, heatRes, membersRes, extras] = await Promise.all(
+      [
+        pool.query(
+          `SELECT count(*) AS messages, COALESCE(sum(char_count), 0) AS chars,
                 count(DISTINCT user_id) AS users,
                 MIN(created_at) AS first_at, MAX(created_at) AS last_at
          FROM messages WHERE guild_id = $1 AND channel_id = ANY($2::bigint[]) AND is_bot = FALSE ${periodFilter}`,
-        baseParams,
-      ),
-      pool.query(
-        `SELECT DATE(created_at AT TIME ZONE 'Asia/Tokyo') AS d, count(*) AS c
+          baseParams,
+        ),
+        pool.query(
+          `SELECT DATE(created_at AT TIME ZONE 'Asia/Tokyo') AS d, count(*) AS c,
+                count(DISTINCT user_id) AS u, COALESCE(sum(char_count), 0) AS chars
          FROM messages WHERE guild_id = $1 AND channel_id = ANY($2::bigint[]) AND is_bot = FALSE ${periodFilter}
          GROUP BY d ORDER BY d`,
-        baseParams,
-      ),
-      pool.query(
-        `SELECT EXTRACT(DOW FROM created_at AT TIME ZONE 'Asia/Tokyo') AS dow, count(*) AS c
+          baseParams,
+        ),
+        pool.query(
+          `SELECT EXTRACT(DOW FROM created_at AT TIME ZONE 'Asia/Tokyo') AS dow, count(*) AS c
          FROM messages WHERE guild_id = $1 AND channel_id = ANY($2::bigint[]) AND is_bot = FALSE ${periodFilter} GROUP BY dow`,
-        baseParams,
-      ),
-      pool.query(
-        `SELECT EXTRACT(HOUR FROM created_at AT TIME ZONE 'Asia/Tokyo') AS hour, count(*) AS c
+          baseParams,
+        ),
+        pool.query(
+          `SELECT EXTRACT(HOUR FROM created_at AT TIME ZONE 'Asia/Tokyo') AS hour, count(*) AS c
          FROM messages WHERE guild_id = $1 AND channel_id = ANY($2::bigint[]) AND is_bot = FALSE ${periodFilter} GROUP BY hour`,
-        baseParams,
-      ),
-      pool.query(
-        `SELECT EXTRACT(DOW FROM created_at AT TIME ZONE 'Asia/Tokyo') AS dow,
+          baseParams,
+        ),
+        pool.query(
+          `SELECT EXTRACT(DOW FROM created_at AT TIME ZONE 'Asia/Tokyo') AS dow,
                 EXTRACT(HOUR FROM created_at AT TIME ZONE 'Asia/Tokyo') AS hour, count(*) AS c
          FROM messages WHERE guild_id = $1 AND channel_id = ANY($2::bigint[]) AND is_bot = FALSE ${periodFilter}
          GROUP BY dow, hour`,
-        baseParams,
-      ),
-      pool.query(
-        `SELECT m.user_id, COALESCE(gm.display_name, u.display_name, u.username) AS display_name,
+          baseParams,
+        ),
+        pool.query(
+          `SELECT m.user_id, COALESCE(gm.display_name, u.display_name, u.username) AS display_name,
                 u.username, u.avatar_url, u.avatar_decoration_url, count(*) AS c,
                 COALESCE(sum(m.char_count), 0) AS chars
          FROM messages m
@@ -354,9 +371,42 @@ export function register(app: Hono<AppEnv>, h: RouteHelpers): void {
            AND u.display_name NOT ILIKE 'deleted%user'
          GROUP BY m.user_id, gm.display_name, u.display_name, u.username, u.avatar_url, u.avatar_decoration_url
          ORDER BY c DESC LIMIT 10`,
-        baseParams,
-      ),
-    ]);
+          baseParams,
+        ),
+        // ポップアップ用の派生集計 (リピーター分布・日別1位・最長メッセージ・新規メンバー)
+        Promise.all([
+          repeatBuckets(
+            pool,
+            `m.guild_id = $1 AND m.channel_id = ANY($2::bigint[]) AND m.is_bot = FALSE ${periodFilterM}`,
+            baseParams,
+          ),
+          leadersPerDay(
+            pool,
+            `m.guild_id = $1 AND m.channel_id = ANY($2::bigint[]) AND m.is_bot = FALSE ${periodFilterM}`,
+            baseParams,
+          ),
+          longestMessage(
+            pool,
+            `m.guild_id = $1 AND m.channel_id = ANY($2::bigint[]) AND m.is_bot = FALSE ${periodFilterM}`,
+            baseParams,
+          ),
+          startDate && endDate
+            ? newMembersCount(pool, {
+                guildId: guild.guildId,
+                start: startDate,
+                end: endDate,
+                scopeClause: "m.channel_id = ANY($4::bigint[])",
+                scopeParams: [targetIds],
+              })
+            : Promise.resolve(null),
+        ]).then(([repeat, leaders, longest, newMembers]) => ({
+          repeat,
+          leaders,
+          longest_message: longest,
+          new_members: newMembers,
+        })),
+      ],
+    );
 
     const messages = Number(summaryRes.rows[0]?.messages ?? 0);
     const channelInfo = {
@@ -416,7 +466,12 @@ export function register(app: Hono<AppEnv>, h: RouteHelpers): void {
       chars: Number(summaryRes.rows[0]?.chars ?? 0),
       users: Number(summaryRes.rows[0]?.users ?? 0),
       rank,
-      daily: dailyRes.rows.map((row) => ({ date: String(row.d), count: Number(row.c) })),
+      daily: dailyRes.rows.map((row) => ({
+        date: String(row.d),
+        count: Number(row.c),
+        users: Number(row.u),
+        chars: Number(row.chars),
+      })),
       members: membersRes.rows.map((row) => ({
         user_id: String(row.user_id),
         display_name: (row.display_name as string) || "Unknown",
@@ -443,6 +498,10 @@ export function register(app: Hono<AppEnv>, h: RouteHelpers): void {
       last_at: summaryRes.rows[0]?.last_at
         ? new Date(summaryRes.rows[0].last_at as string).toISOString()
         : null,
+      new_members: extras.new_members,
+      repeat: extras.repeat,
+      longest_message: extras.longest_message,
+      leaders: extras.leaders,
     };
     cache.set(ckey, res, ttl);
     return jsonResponse(res, 200, headers);

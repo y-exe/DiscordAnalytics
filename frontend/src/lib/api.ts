@@ -1,15 +1,22 @@
 const SAME_ORIGIN = process.env.NEXT_PUBLIC_SAME_ORIGIN === "true";
-const API_URL = SAME_ORIGIN
-  ? "/api"
-  : process.env.NEXT_PUBLIC_API_URL ||
-    (process.env.NODE_ENV === "development" ? "" : "https://api.ymkw.top");
+// 開発時のみ: クライアントを同一オリジン /api に向け、next.config.ts の rewrite で
+// NEXT_PUBLIC_API_URL (本番API) へ中継する。本番ビルドでは無効。
+const DEV_PROXY =
+  process.env.NODE_ENV === "development" && process.env.NEXT_PUBLIC_DEV_PROXY === "true";
+const API_URL =
+  SAME_ORIGIN || DEV_PROXY
+    ? "/api"
+    : process.env.NEXT_PUBLIC_API_URL ||
+      (process.env.NODE_ENV === "development" ? "" : "https://api.ymkw.top");
 const SSR_API_URL = SAME_ORIGIN
-  ? process.env.API_URL || "http://ymkw-backend:8070"
+  ? process.env.API_URL || "http://discord-analytics-backend:8070"
   : process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || "https://api.ymkw.top";
 
 interface FetchAPIOptions extends Omit<RequestInit, "signal"> {
   timeout?: number;
   retries?: number;
+  /** trueで失敗時にエラーページへ遷移しない (事前取得などバックグラウンド用) */
+  quiet?: boolean;
 }
 
 export class APIError extends Error {
@@ -36,6 +43,37 @@ async function resolveForwardedHost(): Promise<string | null> {
   }
 }
 
+/* ------------------------- クライアント側 GET キャッシュ ------------------------- */
+// 期間切替やページ間の行き来を高速化するため、直近のGETレスポンスをメモリに保持する。
+// SSRでは無効 (サーバーはリクエスト間で状態を持たない)。月次集計は変化が緩やかなため
+// 短いTTLで十分。
+interface CacheEntry {
+  ts: number;
+  body: unknown;
+}
+const CACHE_TTL = 5 * 60 * 1000;
+const CACHE_MAX = 40;
+const responseCache = new Map<string, CacheEntry>();
+
+function cacheStore(key: string, body: unknown): void {
+  while (responseCache.size >= CACHE_MAX) {
+    const oldest = responseCache.keys().next().value;
+    if (oldest === undefined) break;
+    responseCache.delete(oldest);
+  }
+  responseCache.set(key, { ts: Date.now(), body });
+}
+
+function cacheGet(key: string): unknown {
+  const hit = responseCache.get(key);
+  if (!hit) return null;
+  if (Date.now() - hit.ts > CACHE_TTL) {
+    responseCache.delete(key);
+    return null;
+  }
+  return hit.body;
+}
+
 export async function fetchAPI(path: string, options: FetchAPIOptions = {}): Promise<Response> {
   const { retries = 2, ...fetchOptions } = options;
   const isServer = typeof window === "undefined";
@@ -43,10 +81,24 @@ export async function fetchAPI(path: string, options: FetchAPIOptions = {}): Pro
   const url = path.startsWith("http") ? path : `${baseUrl}${path}`;
   const forwardedHost = isServer ? await resolveForwardedHost() : null;
   const headers: Record<string, string> = {
-    ...(isServer && !SAME_ORIGIN ? { Referer: "https://ymkw.top/" } : {}),
+    // クロスオリジンSSR取得時は配信中サイト自身をRefererにする (固定ドメインを持たない)
+    ...(isServer && !SAME_ORIGIN && forwardedHost ? { Referer: `https://${forwardedHost}/` } : {}),
     ...(forwardedHost ? { "x-forwarded-host": forwardedHost } : {}),
     ...((fetchOptions.headers as Record<string, string>) || {}),
   };
+
+  // クライアントのGETのみキャッシュ対象
+  const method = (fetchOptions.method ?? "GET").toUpperCase();
+  const canCache = !isServer && method === "GET" && !fetchOptions.body;
+  if (canCache) {
+    const cached = cacheGet(url);
+    if (cached !== null) {
+      return new Response(JSON.stringify(cached), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }
+  }
 
   let lastError: Error | null = null;
 
@@ -59,7 +111,17 @@ export async function fetchAPI(path: string, options: FetchAPIOptions = {}): Pro
         credentials: fetchOptions.credentials ?? "include",
       });
 
-      if (res.ok || res.status === 404) return res;
+      if (res.ok) {
+        if (canCache) {
+          try {
+            cacheStore(url, await res.clone().json());
+          } catch {
+            // JSONでないボディはキャッシュしない
+          }
+        }
+        return res;
+      }
+      if (res.status === 404) return res;
       const apiError = new APIError(`HTTP ${res.status}`, res.status, url);
       lastError = apiError;
 
@@ -89,15 +151,16 @@ export async function fetchAPI(path: string, options: FetchAPIOptions = {}): Pro
   }
 
   if (lastError) {
-    redirectToErrorPage(lastError, isServer);
+    redirectToErrorPage(lastError, isServer, options.quiet ?? false);
     throw lastError;
   }
   throw new Error("Fetch failed after retries");
 }
 
-function redirectToErrorPage(error: Error, isServer: boolean): void {
+function redirectToErrorPage(error: Error, isServer: boolean, quiet: boolean): void {
   if (
     isServer ||
+    quiet ||
     typeof window === "undefined" ||
     !(error instanceof APIError) ||
     error.status < 500
@@ -105,12 +168,25 @@ function redirectToErrorPage(error: Error, isServer: boolean): void {
     return;
   if (window.location.pathname === "/error") return;
 
-  // 内部APIのURLをクエリに露出させない (code/msgのみ渡す)
+  // ページのパスと code/msg をクエリに渡す (内部APIのURLは露出させない)
   const params = new URLSearchParams({
     code: String(error.status),
     msg: error.message || "Bad Gateway",
+    path: window.location.pathname,
   });
   window.location.assign(`/error?${params.toString()}`);
+}
+
+/** 指定パスを事前取得してキャッシュを温める (期間切替の高速化)。失敗しても何もしない */
+const inflightPrefetch = new Set<string>();
+export function prefetchAPI(path: string): void {
+  if (typeof window === "undefined") return;
+  const url = `${API_URL}${path}`;
+  if (cacheGet(url) !== null || inflightPrefetch.has(url)) return;
+  inflightPrefetch.add(url);
+  void fetchAPI(path, { retries: 1, quiet: true })
+    .catch(() => {})
+    .finally(() => inflightPrefetch.delete(url));
 }
 
 function delay(ms: number): Promise<void> {

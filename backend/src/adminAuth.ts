@@ -9,7 +9,7 @@ const pbkdf2Async = promisify(pbkdf2) as (
   digest: string,
 ) => Promise<Buffer>;
 
-export const ADMIN_COOKIE_NAME = "__Secure-ymkw_admin";
+export const ADMIN_COOKIE_NAME = "__Secure-analytics_admin";
 export const ADMIN_SESSION_MAX_AGE = 60 * 60 * 24;
 export const ADMIN_LOGIN_WINDOW = 10 * 60;
 export const ADMIN_LOGIN_LIMIT = 5;

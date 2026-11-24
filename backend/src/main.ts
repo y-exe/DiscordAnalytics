@@ -10,7 +10,7 @@ import { SafeDiskCache } from "./safeCache";
 const PORT = 8070;
 
 function log(level: "INFO" | "WARN" | "ERROR", message: string): void {
-  const line = `${new Date().toISOString()} [${level}] ymkw-api: ${message}`;
+  const line = `${new Date().toISOString()} [${level}] discord-analytics-api: ${message}`;
   if (level === "ERROR") console.error(line);
   else if (level === "WARN") console.warn(line);
   else console.log(line);
@@ -58,7 +58,7 @@ async function main(): Promise<void> {
 
   await initializeLoginLimits(pool);
 
-  const cacheDir = path.join(os.tmpdir(), "ymkw_api_diskcache_v14");
+  const cacheDir = path.join(os.tmpdir(), "discord_analytics_diskcache_v14");
   const cache = new SafeDiskCache(cacheDir, cfg.cacheSizeLimitBytes);
 
   const app = createApp({
@@ -69,7 +69,7 @@ async function main(): Promise<void> {
     verifyAdminPassword,
   });
 
-  const stopWarmLoop = startWarmLoop(app);
+  const stopWarmLoop = startWarmLoop(app, cfg);
 
   const server = Bun.serve({
     hostname: "0.0.0.0",

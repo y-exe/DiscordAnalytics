@@ -1,20 +1,45 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { MotionConfig, motion } from "framer-motion";
 import { GripVertical } from "lucide-react";
+import TileDialog from "./TileDialog";
 
-interface Item {
+export interface ReorderableItem {
   id: string;
   node: ReactNode;
+  /** グリッドアイテムへの追加クラス (col-span等) */
+  className?: string;
+  /** 指定時はカードクリックでこの内容を拡大ダイアログに表示する */
+  dialog?: ReactNode;
 }
 
 /**
- * カードをドラッグで並べ替え可能にするラッパー (comcom風)。
+ * カードを1枚ずつドラッグで並べ替えられるグリッド (Cloudflareダッシュボード風)。
+ * 並び替え時はreact-grid-layoutのように他のカードが滑らかに流れる。
  * 並び順はlocalStorageに保存され、再訪時も維持される。
+ * dialogを指定したカードはクリックで拡大ダイアログが開く。
  */
-export default function Reorderable({ storageKey, items }: { storageKey: string; items: Item[] }) {
+export default function Reorderable({
+  storageKey,
+  items,
+  className = "grid grid-flow-dense gap-4 md:grid-cols-2 xl:grid-cols-4",
+  resetToken = 0,
+  replayKey = "",
+}: {
+  storageKey: string;
+  items: ReorderableItem[];
+  className?: string;
+  /** 値を変えると保存済み並び順を破棄してデフォルト順に戻す */
+  resetToken?: number;
+  /** 値を変えるとカードを再マウントし、出現アニメーションを再生する (期間切替など) */
+  replayKey?: string;
+}) {
   const [order, setOrder] = useState<string[] | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [openId, setOpenId] = useState<string | null>(null);
+  // 初回マウント時の並び順復元ではアニメーションさせない (ドラッグ開始時から有効化)
+  const [animated, setAnimated] = useState(false);
 
   useEffect(() => {
     try {
@@ -34,6 +59,22 @@ export default function Reorderable({ storageKey, items }: { storageKey: string;
     // itemsのid構成は安定している前提
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storageKey]);
+
+  // resetTokenが変化したら保存済み並び順を破棄してデフォルト順へ戻す
+  const lastResetRef = useRef(resetToken);
+  useEffect(() => {
+    if (lastResetRef.current === resetToken) return;
+    lastResetRef.current = resetToken;
+    if (resetToken === 0) return;
+    try {
+      window.localStorage.removeItem(storageKey);
+    } catch {
+      // 保存できない環境では無視
+    }
+    setOrder(items.map((item) => item.id));
+    // itemsは最新のレンダーのものを使うため依存に入れない
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resetToken, storageKey]);
 
   const ordered = useMemoOrder(items, order);
 
@@ -56,38 +97,74 @@ export default function Reorderable({ storageKey, items }: { storageKey: string;
     persist(current);
   };
 
+  const openItem = openId ? ordered.find((item) => item.id === openId) : null;
+
   return (
-    <>
-      {ordered.map((item) => (
-        <div
-          key={item.id}
-          className={`group/reorder relative ${draggingId === item.id ? "opacity-50" : ""}`}
-          onDragOver={(e) => {
-            e.preventDefault();
-            handleDragOver(item.id);
-          }}
-        >
-          <button
-            type="button"
+    <MotionConfig reducedMotion="user">
+      <div className={className}>
+        {ordered.map((item, index) => (
+          <motion.div
+            key={replayKey ? `${item.id}:${replayKey}` : item.id}
+            layout={animated}
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{
+              layout: { duration: 0.2, ease: "easeOut" },
+              opacity: {
+                duration: 0.3,
+                delay: Math.min(index * 0.04, 0.4),
+                ease: "easeOut",
+              },
+              y: {
+                duration: 0.35,
+                delay: Math.min(index * 0.04, 0.4),
+                ease: [0.23, 1, 0.32, 1],
+              },
+            }}
             draggable
-            onDragStart={() => setDraggingId(item.id)}
+            onDragStart={(e) => {
+              // framer-motionのハンドラ型だが、draggable属性のネイティブDnDイベントとして扱う
+              const de = e as unknown as React.DragEvent<HTMLDivElement>;
+              setDraggingId(item.id);
+              setAnimated(true);
+              de.dataTransfer.effectAllowed = "move";
+            }}
             onDragEnd={() => setDraggingId(null)}
-            aria-label="カードを移動"
-            className="absolute right-1 top-1/2 z-10 hidden h-6 w-6 -translate-y-1/2 cursor-grab place-items-center rounded-md text-muted-foreground/50 hover:bg-muted hover:text-foreground group-hover/reorder:grid active:cursor-grabbing"
+            onDragOver={(e) => {
+              e.preventDefault();
+              handleDragOver(item.id);
+            }}
+            onClick={(e) => {
+              if (!item.dialog) return;
+              if ((e.target as HTMLElement).closest("a,button")) return;
+              setOpenId(item.id);
+            }}
+            className={`group/reorder relative h-full ${item.className ?? ""} ${item.dialog ? "cursor-pointer" : ""} ${draggingId === item.id ? "z-20 opacity-50" : ""}`}
           >
-            <GripVertical className="h-4 w-4" />
-          </button>
-          {item.node}
-        </div>
-      ))}
-    </>
+            <button
+              type="button"
+              aria-label="カードを移動"
+              onClick={(e) => e.stopPropagation()}
+              className="absolute right-1 top-1 z-10 hidden h-6 w-6 cursor-grab place-items-center rounded-md text-muted-foreground/50 hover:bg-muted hover:text-foreground group-hover/reorder:grid active:cursor-grabbing"
+            >
+              <GripVertical className="h-4 w-4" aria-hidden="true" />
+            </button>
+            {item.node}
+          </motion.div>
+        ))}
+      </div>
+      {/* 常設 (openトグル): 条件付きマウントだとclose後の再openでshowModalが失敗するため */}
+      <TileDialog open={openId !== null} onClose={() => setOpenId(null)}>
+        {openItem?.dialog ?? null}
+      </TileDialog>
+    </MotionConfig>
   );
 }
 
-function useMemoOrder(items: Item[], order: string[] | null): Item[] {
+function useMemoOrder(items: ReorderableItem[], order: string[] | null): ReorderableItem[] {
   if (!order) return items;
   const map = new Map(items.map((item) => [item.id, item]));
-  const result: Item[] = [];
+  const result: ReorderableItem[] = [];
   for (const id of order) {
     const item = map.get(id);
     if (item) {
