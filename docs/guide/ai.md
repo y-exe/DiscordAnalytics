@@ -7,7 +7,7 @@
 ## 使い方
 
 - サイドバーの「AI」(`/ai`) から開く。
-- 既定では**管理者ログインが必要** (`AI_REQUIRE_ADMIN=true`)。未ログインでは管理者パスワードの入力を求められる。
+- 既定は**一般開放**。レート制限・1日上限でabuse対策をしている (`AI_REQUIRE_ADMIN=true` で管理者ログインのみに制限でき、その場合未ログインでは管理者パスワードの入力を求められる)。
 - 入力カードに質問を入力して送信。過去のやり取りはスレッドとして保存され、「最近のチャット」やヘッダーから再開・削除できる。
 - 回答はストリーミング表示。AIがDBやコマンドを実行した場合は実行内容がツールチップとして表示される。
 
@@ -36,6 +36,9 @@
 | `AI_MODEL` | `deepseek-chat` | モデルID |
 | `AI_BASE_URL` | `https://api.deepseek.com` | OpenAI互換APIのベースURL |
 | `AI_AGENT_SOCKET` | (なし) | agentコンテナのUnix socketパス (k3sでは `/agent-sock/agent.sock`) |
-| `AI_REQUIRE_ADMIN` | `true` | `false` で誰でも利用可能に (レート制限は別途適用) |
+| `AI_REQUIRE_ADMIN` | `false` | `true` で管理者セッションのみ利用可能に |
+| `AI_RATE_LIMIT_PER_10MIN` | `20` | IPごとの10分あたりメッセージ上限 (管理者/Botは5倍) |
+| `AI_DAILY_LIMIT_PER_IP` | `100` | IPごとの1日あたりメッセージ上限 (管理者/Botは適用外) |
+| `AI_DAILY_LIMIT_GLOBAL` | `1000` | サイト全体の1日あたりメッセージ上限 (コストのサーキットブレーカー) |
 
-レート制限: `POST /api/ai/chat` はIPごとに10分あたり30メッセージ。
+abuse対策: `POST /api/ai/chat` は ①IPごとに10分あたり20メッセージ ②IPごとに1日100メッセージ ③サイト全体で1日1000メッセージ の3段階で制限する (管理者セッション/Botキーは日次上限の適用外)。無効化時 (`AI_ENABLED=false` / `DEEPSEEK_API_KEY` 未設定) はページに「無効」表示が出る。

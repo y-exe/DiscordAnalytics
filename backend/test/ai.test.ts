@@ -25,10 +25,18 @@ function withAiEnv(): () => void {
   const saved = {
     DEEPSEEK_API_KEY: process.env.DEEPSEEK_API_KEY,
     AI_BASE_URL: process.env.AI_BASE_URL,
+    AI_REQUIRE_ADMIN: process.env.AI_REQUIRE_ADMIN,
+    AI_RATE_LIMIT_PER_10MIN: process.env.AI_RATE_LIMIT_PER_10MIN,
+    AI_DAILY_LIMIT_PER_IP: process.env.AI_DAILY_LIMIT_PER_IP,
+    AI_DAILY_LIMIT_GLOBAL: process.env.AI_DAILY_LIMIT_GLOBAL,
     GUILD_ID: process.env.GUILD_ID,
   };
   process.env.DEEPSEEK_API_KEY = "test-key";
   process.env.AI_BASE_URL = "https://ai.test.invalid";
+  process.env.AI_RATE_LIMIT_PER_10MIN = "20";
+  process.env.AI_DAILY_LIMIT_PER_IP = "100";
+  process.env.AI_DAILY_LIMIT_GLOBAL = "1000";
+  delete process.env.AI_REQUIRE_ADMIN; // 既定 (一般開放) に揃える
   process.env.GUILD_ID = "987654321";
   return () => {
     for (const [key, value] of Object.entries(saved)) {
@@ -125,13 +133,64 @@ test("AIキー未設定なら/aiは503を返す", async () => {
   }
 });
 
-test("管理者セッションなしの/aiは403を返す", async () => {
+test("AI_REQUIRE_ADMIN=trueなら管理者セッションなしの/aiは403を返す", async () => {
   const restore = withAiEnv();
+  process.env.AI_REQUIRE_ADMIN = "true";
+  const cfg = await config.loadConfig();
+  const token = createAdminSession(cfg.adminSessionSecret, Math.floor(Date.now() / 1000));
   const { app, cleanup } = await buildTestApp();
   try {
     const response = await app.request("/ai/threads");
     assert.equal(response.status, 403);
+    // 有効なセッションなら通る
+    const ok = await app.request("/ai/threads", {
+      headers: { cookie: `${ADMIN_COOKIE_NAME}=${token}` },
+    });
+    assert.equal(ok.status, 200);
   } finally {
+    await cleanup();
+    restore();
+  }
+});
+
+test("一般開放時はセッションなしでスレッド一覧を取得できる", async () => {
+  const restore = withAiEnv();
+  const { app, cleanup } = await buildTestApp();
+  try {
+    const response = await app.request("/ai/threads");
+    assert.equal(response.status, 200);
+  } finally {
+    await cleanup();
+    restore();
+  }
+});
+
+test("連投は短時間上限で429になる", async () => {
+  const restore = withAiEnv();
+  const cfg = await config.loadConfig();
+  assert.equal(cfg.ai.rateLimitPer10Min, 20);
+  const { app, cleanup } = await buildTestApp();
+  const stub = stubDeepSeekFetch([
+    JSON.stringify({ choices: [{ delta: { content: "ok" } }] }),
+    "data: [DONE]",
+  ]);
+  try {
+    let lastStatus = 0;
+    for (let i = 0; i <= cfg.ai.rateLimitPer10Min; i++) {
+      const response = await app.request("/ai/chat", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ message: `テスト${i}` }),
+      });
+      lastStatus = response.status;
+      if (i < cfg.ai.rateLimitPer10Min) {
+        assert.equal(response.status, 200);
+        await response.text();
+      }
+    }
+    assert.equal(lastStatus, 429);
+  } finally {
+    stub.restore();
     await cleanup();
     restore();
   }

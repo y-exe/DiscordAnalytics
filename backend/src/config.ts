@@ -30,8 +30,14 @@ export interface AIConfig {
   baseUrl: string;
   /** agentコンテナのUnix socket。空ならrun_commandはローカル実行 (開発用) */
   agentSocket: string;
-  /** trueなら管理者セッションのみ利用可能 (既定) */
+  /** trueなら管理者セッションのみ利用可能 (既定は一般開放) */
   requireAdmin: boolean;
+  /** IPごとの10分あたりメッセージ上限 */
+  rateLimitPer10Min: number;
+  /** IPごとの1日あたりメッセージ上限 (APIコスト対策) */
+  dailyLimitPerIp: number;
+  /** サイト全体の1日あたりメッセージ上限 (サーキットブレーカー) */
+  dailyLimitGlobal: number;
 }
 
 export interface AppConfig {
@@ -253,7 +259,10 @@ export async function loadConfig(options: ConfigLoadOptions = {}): Promise<AppCo
     model: (process.env.AI_MODEL || "deepseek-chat").trim(),
     baseUrl: (process.env.AI_BASE_URL || "https://api.deepseek.com").trim(),
     agentSocket: (process.env.AI_AGENT_SOCKET || "").trim(),
-    requireAdmin: (process.env.AI_REQUIRE_ADMIN ?? "true").toLowerCase() === "true",
+    requireAdmin: (process.env.AI_REQUIRE_ADMIN ?? "false").toLowerCase() === "true",
+    rateLimitPer10Min: intEnv(process.env.AI_RATE_LIMIT_PER_10MIN, 20),
+    dailyLimitPerIp: intEnv(process.env.AI_DAILY_LIMIT_PER_IP, 100),
+    dailyLimitGlobal: intEnv(process.env.AI_DAILY_LIMIT_GLOBAL, 1000),
   };
 
   return {

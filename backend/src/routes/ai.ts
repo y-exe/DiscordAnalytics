@@ -181,10 +181,6 @@ export function register(app: Hono<AppEnv>, h: RouteHelpers): void {
     const { guild, pool } = guard;
 
     const clientIp = getPeerIp(c);
-    // AIはコストが掛かるため通常より厳しめのレート制限 (10分あたり30メッセージ)
-    if (!cache.consumeLimit(`ai:${clientIp}`, 30, 600)) {
-      return jsonError(429, "AIの利用制限中です。しばらく待ってから再試行してください。");
-    }
 
     const body = await readBodyCapped(c.req.raw, 64_000);
     if (!body) return jsonError(422, "Invalid JSON body");
@@ -200,6 +196,27 @@ export function register(app: Hono<AppEnv>, h: RouteHelpers): void {
     message = message.trim();
     if (!message) return jsonError(422, "message is required");
     if (message.length > 8_000) message = message.slice(0, 8_000);
+
+    // abuse対策 (APIコストが掛かるため通常より厳しめ):
+    // ① IPごとの短時間上限 (管理者/Botキーはゆるめ) ② IPごとの1日上限 ③ サイト全体の1日上限
+    const privileged =
+      isApiClient(c.req.header("x-api-key"), cfg.apiSecret) ||
+      verifyAdminSession(getCookie(c, ADMIN_COOKIE_NAME), cfg.adminSessionSecret);
+    if (
+      !cache.consumeLimit(
+        `ai:${clientIp}`,
+        privileged ? cfg.ai.rateLimitPer10Min * 5 : cfg.ai.rateLimitPer10Min,
+        600,
+      )
+    ) {
+      return jsonError(429, "連投制限中です。しばらく待ってから再試行してください。");
+    }
+    if (!privileged && !cache.consumeLimit(`ai-day:${clientIp}`, cfg.ai.dailyLimitPerIp, 86_400)) {
+      return jsonError(429, "本日のAI利用上限に達しました (1日あたりの上限を超えました)。");
+    }
+    if (!privileged && !cache.consumeLimit("ai-day:global", cfg.ai.dailyLimitGlobal, 86_400)) {
+      return jsonError(429, "現在AIの利用が集中しています。時間をおいて再試行してください。");
+    }
 
     // スレッドを用意 (既存チェック or 新規作成)
     let title = threadTitle(message);
