@@ -161,6 +161,8 @@ export function startWsServer(): void {
             ws.send(JSON.stringify({ type: "error", message: "Invalid JSON body" }));
             return;
           }
+          // awaitを挟む前に同期で確保する (連続メッセージで同時に2チャット走るのを防ぐ)
+          data.chat = new AbortController();
 
           const deps = await chatDeps();
           const prepared = await prepareAIChat(deps, {
@@ -178,8 +180,7 @@ export function startWsServer(): void {
             return;
           }
 
-          const controller = new AbortController();
-          data.chat = controller;
+          const controller = data.chat;
           try {
             await runAIChat(deps, prepared, {
               signal: controller.signal,
