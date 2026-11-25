@@ -1,155 +1,262 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import rehypeHighlight from "rehype-highlight";
+import { Check, Copy, Download } from "lucide-react";
+import { ServerTagChip, UserAvatar } from "@/components/views/discord/DiscordIdentity";
 
-/**
- * AI応答用の軽量Markdownレンダラ。
- * 対応: コードブロック (fenced)、見出し、リスト、太字、インラインコード、リンク。
- */
-
-function renderInline(text: string, keyPrefix: string): ReactNode[] {
-  // **太字**、`code`、[text](url) を順に処理する
-  const pattern = /(\*\*[^*]+\*\*|`[^`]+`|\[[^\]]+\]\([^)\s]+\))/g;
-  const nodes: ReactNode[] = [];
-  let last = 0;
-  let match: RegExpExecArray | null;
-  let i = 0;
-  while ((match = pattern.exec(text)) !== null) {
-    if (match.index > last) nodes.push(text.slice(last, match.index));
-    const token = match[0];
-    const key = `${keyPrefix}-${i++}`;
-    if (token.startsWith("**")) {
-      nodes.push(
-        <strong key={key} className="font-bold">
-          {token.slice(2, -2)}
-        </strong>,
-      );
-    } else if (token.startsWith("`")) {
-      nodes.push(
-        <code
-          key={key}
-          className="rounded-md bg-muted px-1.5 py-0.5 font-mono text-[0.85em] text-foreground"
-        >
-          {token.slice(1, -1)}
-        </code>,
-      );
-    } else {
-      const label = token.slice(1, token.indexOf("]"));
-      const href = token.slice(token.indexOf("(") + 1, -1);
-      nodes.push(
-        <a
-          key={key}
-          href={href}
-          target="_blank"
-          rel="noreferrer"
-          className="text-accent-data underline underline-offset-2"
-        >
-          {label}
-        </a>,
-      );
-    }
-    last = match.index + token.length;
-  }
-  if (last < text.length) nodes.push(text.slice(last));
-  return nodes;
+/** メンションチップ用のユーザー情報 (/ai/mentions の応答) */
+export interface AiMentionUser {
+  user_id: string;
+  display_name: string;
+  username: string;
+  avatar: string | null;
+  avatar_fallback: string | null;
+  avatar_decoration: string | null;
+  primary_guild_tag: string | null;
+  primary_guild_badge: string | null;
 }
 
-function renderBlock(lines: string[], keyPrefix: string): ReactNode {
-  const first = lines[0];
-  if (/^#{1,4}\s/.test(first)) {
-    const level = first.match(/^#+/)?.[0].length ?? 1;
-    const text = first.replace(/^#+\s*/, "");
-    const className =
-      level <= 2
-        ? "mt-4 mb-2 text-lg font-black text-foreground"
-        : "mt-3 mb-1.5 text-base font-bold text-foreground";
-    return (
-      <p key={keyPrefix} className={className}>
-        {renderInline(text, keyPrefix)}
-      </p>
-    );
-  }
-  if (/^[-*]\s/.test(first)) {
-    const items = lines.filter((line) => /^[-*]\s/.test(line));
-    return (
-      <ul key={keyPrefix} className="my-1.5 list-disc space-y-1 pl-5">
-        {items.map((item, i) => (
-          <li key={i} className="text-sm leading-relaxed">
-            {renderInline(item.replace(/^[-*]\s*/, ""), `${keyPrefix}-${i}`)}
-          </li>
-        ))}
-      </ul>
-    );
-  }
-  if (/^\d+\.\s/.test(first)) {
-    const items = lines.filter((line) => /^\d+\.\s/.test(line));
-    return (
-      <ol key={keyPrefix} className="my-1.5 list-decimal space-y-1 pl-5">
-        {items.map((item, i) => (
-          <li key={i} className="text-sm leading-relaxed">
-            {renderInline(item.replace(/^\d+\.\s*/, ""), `${keyPrefix}-${i}`)}
-          </li>
-        ))}
-      </ol>
-    );
-  }
+const MENTION_RE = /<@(\d{1,20})>/g;
+
+/** AI出力のDiscordメンション <@id> をメンバーページへのリンクに変換する */
+function preprocessMentions(text: string): string {
+  const replaced = text.replace(
+    MENTION_RE,
+    (_match, id: string) => `[mention:${id}](/members/${id})`,
+  );
+  // ストリーミング途中の未完メンション (<@123...) は生の文字列を出さないよう隠す
+  return replaced.replace(/<@\d{0,20}$/, "");
+}
+
+/** 拡張子の推定 (ダウンロード用) */
+const EXT_MAP: Record<string, string> = {
+  javascript: "js",
+  typescript: "ts",
+  jsx: "jsx",
+  tsx: "tsx",
+  python: "py",
+  html: "html",
+  xml: "xml",
+  css: "css",
+  json: "json",
+  markdown: "md",
+  bash: "sh",
+  shell: "sh",
+  sql: "sql",
+  yaml: "yml",
+  go: "go",
+  rust: "rs",
+  java: "java",
+  c: "c",
+  cpp: "cpp",
+  csharp: "cs",
+  php: "php",
+  ruby: "rb",
+  lua: "lua",
+  swift: "swift",
+  kotlin: "kt",
+  dockerfile: "dockerfile",
+  makefile: "mk",
+  ini: "ini",
+  toml: "toml",
+  diff: "diff",
+  plaintext: "txt",
+};
+
+/** コードブロック: 白背景+シンタックスハイライト+コピー/ダウンロード */
+function CodeBlock({ lang, children }: { lang: string; children: ReactNode }) {
+  const preRef = useRef<HTMLPreElement>(null);
+  const [copied, setCopied] = useState(false);
+
+  const text = () => preRef.current?.innerText ?? "";
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(text());
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // コピー失敗は無視
+    }
+  };
+
+  const download = () => {
+    const ext = EXT_MAP[lang.toLowerCase()] ?? (lang ? lang.toLowerCase() : "txt");
+    const blob = new Blob([text()], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = lang ? `code.${ext}` : "code.txt";
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
-    <p key={keyPrefix} className="my-1.5 text-sm leading-relaxed">
-      {renderInline(lines.join("\n"), keyPrefix)}
-    </p>
+    <div className="my-3 overflow-hidden rounded-xl border border-muted-foreground/20 bg-background">
+      <div className="flex items-center justify-between border-b border-muted-foreground/15 bg-muted/60 px-4 py-1.5">
+        <span className="font-mono text-[11px] font-bold text-muted-foreground">
+          {lang || "code"}
+        </span>
+        <span className="flex items-center gap-0.5">
+          <button
+            type="button"
+            onClick={() => void copy()}
+            aria-label="コードをコピー"
+            title="コピー"
+            className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+          </button>
+          <button
+            type="button"
+            onClick={download}
+            aria-label="コードをダウンロード"
+            title="ダウンロード"
+            className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            <Download className="h-3.5 w-3.5" />
+          </button>
+        </span>
+      </div>
+      <pre
+        ref={preRef}
+        className="hljs overflow-x-auto px-4 py-3 font-mono text-xs leading-relaxed"
+      >
+        {children}
+      </pre>
+    </div>
   );
 }
 
-export default function AiMarkdown({ text }: { text: string }) {
-  const blocks: ReactNode[] = [];
-  // コードブロックで分割
-  const parts = text.split(/```/);
-  parts.forEach((part, partIndex) => {
-    if (partIndex % 2 === 1) {
-      // コードブロック: 1行目は言語指定 (あれば無視してそのまま表示しない)
-      const body = part.replace(/^[a-zA-Z0-9_+-]*\n/, "");
-      const code = body.replace(/\n$/, "");
-      blocks.push(
-        <pre
-          key={`code-${partIndex}`}
-          className="my-2 overflow-x-auto rounded-xl bg-muted px-4 py-3 font-mono text-xs leading-relaxed text-foreground"
-        >
-          <code>{code}</code>
-        </pre>,
-      );
-      return;
-    }
-    // 通常テキスト: 空行区切りでブロック化
-    const lines = part.split("\n");
-    let group: string[] = [];
-    let groupIsList: "ul" | "ol" | null = null;
-    const flush = () => {
-      if (group.length === 0) return;
-      const isList = group.every((line) =>
-        groupIsList === "ol" ? /^\d+\.\s/.test(line) : /^[-*]\s/.test(line),
-      );
-      blocks.push(
-        isList
-          ? renderBlock(group, `b-${partIndex}-${blocks.length}`)
-          : renderBlock(
-              group.filter((line) => line.trim() !== ""),
-              `b-${partIndex}-${blocks.length}`,
-            ),
-      );
-      group = [];
-      groupIsList = null;
-    };
-    for (const line of lines) {
-      if (line.trim() === "") {
-        flush();
-        continue;
-      }
-      const kind = /^\d+\.\s/.test(line) ? "ol" : /^[-*]\s/.test(line) ? "ul" : null;
-      if (kind && groupIsList && kind !== groupIsList) flush();
-      if (kind) groupIsList = kind;
-      group.push(line);
-    }
-    flush();
-  });
-  return <div className="min-w-0">{blocks}</div>;
+/** メンションチップ: アバター + 表示名 + サーバータグ。クリックでメンバーページへ */
+function MentionChip({ id, users }: { id: string; users?: Record<string, AiMentionUser> }) {
+  const user = users?.[id];
+  return (
+    <a
+      href={`/members/${id}`}
+      className="!no-underline mx-0.5 inline-flex items-center gap-1.5 rounded-full bg-muted/70 py-0.5 pr-1.5 pl-1 align-middle transition-colors hover:bg-muted"
+      title={user ? `@${user.username}` : `ユーザーID: ${id}`}
+    >
+      <UserAvatar
+        user={{
+          user_id: id,
+          avatar: user?.avatar ?? null,
+          avatar_fallback: user?.avatar_fallback ?? null,
+          avatar_decoration: user?.avatar_decoration ?? null,
+        }}
+        size={18}
+      />
+      <span className="text-xs leading-none font-bold text-foreground">
+        {user?.display_name ?? `@${id}`}
+      </span>
+      <ServerTagChip
+        tag={user?.primary_guild_tag ?? null}
+        badge={user?.primary_guild_badge ?? null}
+      />
+    </a>
+  );
+}
+
+/** コードブロックの言語名をpre直下のcode要素から取り出す */
+function preLanguage(node: {
+  children?: Array<{ tagName?: string; properties?: { className?: unknown } }>;
+}): string {
+  const code = node.children?.find((child) => child.tagName === "code");
+  const classNames = code?.properties?.className;
+  if (!Array.isArray(classNames)) return "";
+  for (const cls of classNames) {
+    if (typeof cls === "string" && cls.startsWith("language-")) return cls.slice(9);
+  }
+  return "";
+}
+
+/** AI応答用Markdownレンダラ (GFM + メンション + コードハイライト) */
+export default function AiMarkdown({
+  text,
+  mentions,
+}: {
+  text: string;
+  mentions?: Record<string, AiMentionUser>;
+}) {
+  const mentionLink = (href: string | undefined): string | null => {
+    const match = typeof href === "string" ? /^\/members\/(\d{1,20})$/.exec(href) : null;
+    return match ? match[1] : null;
+  };
+
+  return (
+    <div className="min-w-0 [&_a]:text-foreground [&_a]:underline [&_a]:underline-offset-2 [&_ol]:my-1.5 [&_ol]:list-decimal [&_ol]:space-y-1 [&_ol]:pl-5 [&_p]:my-1.5 [&_p]:text-sm [&_p]:leading-relaxed [&_strong]:font-bold [&_ul]:my-1.5 [&_ul]:list-disc [&_ul]:space-y-1 [&_ul]:pl-5 [&_li]:text-sm [&_li]:leading-relaxed">
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        rehypePlugins={[[rehypeHighlight, { detect: false, ignoreMissing: true }]]}
+        components={{
+          h1: (props) => <h2 className="mt-4 mb-2 text-lg font-black text-foreground" {...props} />,
+          h2: (props) => <h2 className="mt-4 mb-2 text-lg font-black text-foreground" {...props} />,
+          h3: (props) => (
+            <h3 className="mt-3 mb-1.5 text-base font-bold text-foreground" {...props} />
+          ),
+          h4: (props) => (
+            <h4 className="mt-3 mb-1.5 text-base font-bold text-foreground" {...props} />
+          ),
+          code: ({ className, children, ...rest }) => {
+            // ブロックコードはpreで処理するため、ここではインラインコードのみ
+            if (typeof className === "string" && className.includes("language-")) {
+              return (
+                <code className="hljs font-mono" {...rest}>
+                  {children}
+                </code>
+              );
+            }
+            return (
+              <code
+                className="rounded-md bg-muted px-1.5 py-0.5 font-mono text-[0.85em] text-foreground"
+                {...rest}
+              >
+                {children}
+              </code>
+            );
+          },
+          pre: ({ node, children }) => (
+            <CodeBlock lang={preLanguage(node as never)}>{children}</CodeBlock>
+          ),
+          a: ({ href, children }) => {
+            const id = mentionLink(href);
+            if (id) return <MentionChip id={id} users={mentions} />;
+            return (
+              <a
+                href={href}
+                className="font-bold underline underline-offset-2"
+                {...{ target: "_blank", rel: "noopener noreferrer" }}
+              >
+                {children}
+              </a>
+            );
+          },
+          table: (props) => (
+            <div className="my-3 overflow-x-auto rounded-xl border border-muted-foreground/20 bg-background">
+              <table className="w-full border-collapse text-sm" {...props} />
+            </div>
+          ),
+          thead: (props) => <thead className="bg-foreground" {...props} />,
+          th: (props) => (
+            <th
+              className="border-b border-muted-foreground/20 px-3 py-2 text-left font-bold whitespace-nowrap text-background"
+              {...props}
+            />
+          ),
+          td: (props) => <td className="px-3 py-2 align-top" {...props} />,
+          tr: (props) => (
+            <tr
+              className="border-b border-muted-foreground/10 transition-colors last:border-b-0 hover:bg-muted/40"
+              {...props}
+            />
+          ),
+        }}
+      >
+        {preprocessMentions(text)}
+      </ReactMarkdown>
+    </div>
+  );
 }

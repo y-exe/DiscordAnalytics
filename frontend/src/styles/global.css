@@ -113,6 +113,132 @@
   --color-delta-up: #22c55e;
 }
 
+/* AI回答パネル (参考: nani.now風のドットテクスチャ背景) */
+.ai-dots {
+  background-color: var(--color-muted);
+  background-image: radial-gradient(rgba(15, 23, 42, 0.08) 1px, transparent 1px);
+  background-size: 18px 18px;
+}
+
+.dark .ai-dots {
+  background-image: radial-gradient(rgba(255, 255, 255, 0.08) 1px, transparent 1px);
+}
+
+/* AIコードブロックのシンタックスハイライト (rehype-highlight用トークン色) */
+.hljs {
+  color: var(--color-foreground);
+}
+
+.hljs-comment,
+.hljs-quote {
+  color: #64748b;
+  font-style: italic;
+}
+
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-literal,
+.hljs-doctag,
+.hljs-formula {
+  color: #a626a4;
+}
+
+.hljs-string,
+.hljs-regexp,
+.hljs-addition,
+.hljs-attribute,
+.hljs-meta .hljs-string {
+  color: #16a34a;
+}
+
+.hljs-number,
+.hljs-variable,
+.hljs-template-variable,
+.hljs-type,
+.hljs-selector-class,
+.hljs-selector-attr,
+.hljs-selector-pseudo {
+  color: #d97706;
+}
+
+.hljs-title,
+.hljs-title.function_,
+.hljs-section,
+.hljs-name {
+  color: #2563eb;
+}
+
+.hljs-attr,
+.hljs-property,
+.hljs-params,
+.hljs-built_in,
+.hljs-builtin-name,
+.hljs-symbol,
+.hljs-bullet,
+.hljs-link {
+  color: #0891b2;
+}
+
+.hljs-deletion,
+.hljs-meta,
+.hljs-emphasis {
+  color: #dc2626;
+}
+
+.dark .hljs-comment,
+.dark .hljs-quote {
+  color: #94a3b8;
+}
+
+.dark .hljs-keyword,
+.dark .hljs-selector-tag,
+.dark .hljs-literal,
+.dark .hljs-doctag,
+.dark .hljs-formula {
+  color: #d8b4fe;
+}
+
+.dark .hljs-string,
+.dark .hljs-regexp,
+.dark .hljs-addition,
+.dark .hljs-attribute {
+  color: #86efac;
+}
+
+.dark .hljs-number,
+.dark .hljs-variable,
+.dark .hljs-template-variable,
+.dark .hljs-type,
+.dark .hljs-selector-class,
+.dark .hljs-selector-attr,
+.dark .hljs-selector-pseudo {
+  color: #fcd34d;
+}
+
+.dark .hljs-title,
+.dark .hljs-title.function_,
+.dark .hljs-section,
+.dark .hljs-name {
+  color: #93c5fd;
+}
+
+.dark .hljs-attr,
+.dark .hljs-property,
+.dark .hljs-params,
+.dark .hljs-built_in,
+.dark .hljs-builtin-name,
+.dark .hljs-symbol,
+.dark .hljs-bullet,
+.dark .hljs-link {
+  color: #67e8f9;
+}
+
+.dark .hljs-deletion,
+.dark .hljs-meta,
+.dark .hljs-emphasis {
+  color: #fca5a5;
+}
+
 .app-card {
   @apply rounded-2xl border border-transparent bg-sidebar;
 }
@@ -371,6 +497,33 @@
   font-style: normal;
   font-display: swap;
 }
+.ripple-relative {
+  position: relative;
+}
+
+/* 押下波紋 (yexe.netのbutton-rippleと同型)。円はborder-radius: inheritで親の角丸に沿う */
+.button-ripple-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  overflow: hidden;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.button-ripple-circle {
+  position: absolute;
+  border-radius: 50%;
+  /* 縁が柔らかく消えるよう放射勾配にする (硬い円の境界が出ない) */
+  background: radial-gradient(
+    circle closest-side,
+    color-mix(in srgb, var(--ripple-color, currentColor) 90%, transparent) 0%,
+    color-mix(in srgb, var(--ripple-color, currentColor) 60%, transparent) 55%,
+    transparent 100%
+  );
+  pointer-events: none;
+}
+
 .custom-scrollbar::-webkit-scrollbar {
   width: 6px;
 }

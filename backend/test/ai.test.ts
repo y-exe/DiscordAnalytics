@@ -29,6 +29,7 @@ function withAiEnv(): () => void {
     AI_RATE_LIMIT_PER_10MIN: process.env.AI_RATE_LIMIT_PER_10MIN,
     AI_DAILY_LIMIT_PER_IP: process.env.AI_DAILY_LIMIT_PER_IP,
     AI_DAILY_LIMIT_GLOBAL: process.env.AI_DAILY_LIMIT_GLOBAL,
+    AI_ENABLED: process.env.AI_ENABLED,
     GUILD_ID: process.env.GUILD_ID,
   };
   process.env.DEEPSEEK_API_KEY = "test-key";
@@ -37,6 +38,7 @@ function withAiEnv(): () => void {
   process.env.AI_DAILY_LIMIT_PER_IP = "100";
   process.env.AI_DAILY_LIMIT_GLOBAL = "1000";
   delete process.env.AI_REQUIRE_ADMIN; // 既定 (一般開放) に揃える
+  delete process.env.AI_ENABLED; // 既定 (有効) に揃える
   process.env.GUILD_ID = "987654321";
   return () => {
     for (const [key, value] of Object.entries(saved)) {
@@ -117,9 +119,9 @@ test("db_queryは読み取り専用クエリのみ許可する", () => {
   assert.notEqual(validateReadOnlySql("COPY messages TO '/tmp/x'"), null);
 });
 
-test("AIキー未設定なら/aiは503を返す", async () => {
+test("AI機能を無効化 (AI_ENABLED=false) すると/aiは503を返す", async () => {
   const restore = withAiEnv();
-  delete process.env.DEEPSEEK_API_KEY;
+  process.env.AI_ENABLED = "false";
   try {
     const { app, cleanup } = await buildTestApp();
     try {
@@ -306,6 +308,51 @@ test("/ai/chatがツール呼び出しを1ラウンド実行して回答する",
   } finally {
     stub.restore();
     await cleanup();
+    restore();
+  }
+});
+
+test("editOfを指定するとそのメッセージ以降を削り直して送れる", async () => {
+  const restore = withAiEnv();
+  const cfg = await config.loadConfig();
+  const token = createAdminSession(cfg.adminSessionSecret, Math.floor(Date.now() / 1000));
+  const queries: string[] = [];
+  const pool = {
+    query: async (sql: unknown) => {
+      const text = typeof sql === "string" ? sql : String((sql as { text?: string })?.text ?? "");
+      queries.push(text);
+      if (text.includes("FROM guilds ")) return { rows: [fakeGuildRow("987654321")] };
+      if (text.includes("FROM guild_domains")) return { rows: [] };
+      if (text.includes("FROM information_schema.columns")) return { rows: [] };
+      if (text.includes("SELECT id, title FROM ai_threads")) return { rows: [{ id: "t1", title: "テスト" }] };
+      if (text.includes("SELECT 1 FROM ai_messages WHERE id")) return { rows: [{ "1": 1 }] };
+      if (text.includes("FROM ai_messages")) return { rows: [] };
+      return { rows: [], rowCount: 1 };
+    },
+  } as unknown as Pool;
+  const app = createApp({
+    config: cfg,
+    cache: new (await import("../src/safeCache")).SafeDiskCache(
+      (await import("node:os")).tmpdir(),
+      1024 * 1024,
+    ),
+    getPool: () => pool,
+    consumeLoginLimits: async () => true,
+    verifyAdminPassword: async () => false,
+  });
+  const stub = stubDeepSeekFetch([JSON.stringify({ choices: [{ delta: { content: "やり直しました" } }] }), "data: [DONE]"]);
+  try {
+    const response = await app.request("/ai/chat", {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: `${ADMIN_COOKIE_NAME}=${token}` },
+      body: JSON.stringify({ message: "編集後の質問", threadId: "t1", editOf: 42 }),
+    });
+    assert.equal(response.status, 200);
+    await response.text();
+    assert.ok(queries.some((q) => q.startsWith("DELETE FROM ai_messages WHERE thread_id = $1 AND id >= $2")));
+    assert.ok(queries.some((q) => q.includes("RETURNING id")));
+  } finally {
+    stub.restore();
     restore();
   }
 });

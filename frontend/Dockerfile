@@ -36,5 +36,13 @@ ENV NODE_ENV=production \
 COPY --from=builder /app/frontend/.next/standalone ./
 COPY --from=builder /app/frontend/.next/static ./frontend/.next/static
 COPY --from=builder /app/frontend/public ./frontend/public
-EXPOSE 4321
-CMD ["bun", "./frontend/server.js"]
+# AI WebSocketサーバー (backend/srcをBunで直接実行する) 用にバックエンド一式も入れる
+# node_modulesは.dockerignoreで除外されるため、マニフェストだけコピーしてここでインストールする
+COPY backend/package.json backend/bun.lock ./backend/
+COPY shared ./shared
+RUN cd backend && bun install --frozen-lockfile
+COPY backend/src ./backend/src
+COPY backend/tsconfig.json ./backend/tsconfig.json
+COPY frontend/entry.ts ./frontend/entry.ts
+EXPOSE 4321 4322
+CMD ["bun", "./frontend/entry.ts"]
