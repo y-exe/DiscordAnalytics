@@ -15,9 +15,27 @@ const PROD_ALLOWED_ORIGINS = ["https://ymkw.top", "https://www.ymkw.top"];
 const DEV_ALLOWED_ORIGINS = ["http://localhost:4321", "http://127.0.0.1:4321"];
 
 // これらのHostはギルドDomainsが未登録でも既定ギルドへフォールバックする (過渡期互換)
-const DEFAULT_GUILD_HOSTS = ["api.ymkw.top", "localhost", "127.0.0.1", "::1", "discord-analytics-backend"];
+const DEFAULT_GUILD_HOSTS = [
+  "api.ymkw.top",
+  "localhost",
+  "127.0.0.1",
+  "::1",
+  "discord-analytics-backend",
+];
+
+export interface AIConfig {
+  /** DeepSeek APIキー。未設定ならAI機能は無効 (503) */
+  apiKey: string;
+  model: string;
+  baseUrl: string;
+  /** agentコンテナのUnix socket。空ならrun_commandはローカル実行 (開発用) */
+  agentSocket: string;
+  /** trueなら管理者セッションのみ利用可能 (既定) */
+  requireAdmin: boolean;
+}
 
 export interface AppConfig {
+  ai: AIConfig;
   guildId: string;
   defaultGuildHosts: Set<string>;
   /** 公開サイトのリクエストHost (ウォーマーの内部リクエストがギルド解決に使う) */
@@ -229,7 +247,17 @@ export async function loadConfig(options: ConfigLoadOptions = {}): Promise<AppCo
     );
   }
 
+  const aiEnabled = (process.env.AI_ENABLED ?? "true").toLowerCase() !== "false";
+  const ai: AIConfig = {
+    apiKey: aiEnabled ? applicationSecret("DEEPSEEK_API_KEY") : "",
+    model: (process.env.AI_MODEL || "deepseek-chat").trim(),
+    baseUrl: (process.env.AI_BASE_URL || "https://api.deepseek.com").trim(),
+    agentSocket: (process.env.AI_AGENT_SOCKET || "").trim(),
+    requireAdmin: (process.env.AI_REQUIRE_ADMIN ?? "true").toLowerCase() === "true",
+  };
+
   return {
+    ai,
     guildId: (localEnv.GUILD_ID || process.env.GUILD_ID || "").trim(),
     defaultGuildHosts: new Set(
       (process.env.DEFAULT_GUILD_HOSTS || DEFAULT_GUILD_HOSTS.join(","))

@@ -37,3 +37,15 @@ export function createBackendPool(dsn: string): Pool {
     options: "-c application_name=discord-analytics-backend -c statement_timeout=60000",
   });
 }
+
+/** AI機能用の読み取り専用プール (セッションレベルで書込を禁止し、長時間クエリを打ち切る) */
+export function createReadOnlyPool(dsn: string): Pool {
+  return new pg.Pool({
+    connectionString: sanitizedDsn(dsn),
+    max: 2,
+    idleTimeoutMillis: 30_000,
+    ssl: resolveSslOptions(dsn),
+    options:
+      "-c application_name=discord-analytics-ai -c statement_timeout=8000 -c default_transaction_read_only=on",
+  });
+}

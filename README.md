@@ -38,6 +38,12 @@ Discordの今までのチャット履歴等を全て取得し、視覚化する�
 - ユーザーごとの発言数推移を折れ線グラフで可視化。
 - ログイン中のユーザーおよび検索したユーザーのデータをグラフ上で比較可能。
 
+### AIチャット (/ai)
+
+- サーバーのデータについて自然言語で質問できるAIエージェント (DeepSeek)。
+- 分析DBへの読み取り専用SQL、agentコンテナでのコマンド実行、Web検索をツールとして使用。
+- 会話はスレッド単位で保存。詳細は [docs/guide/ai.md](docs/guide/ai.md)。
+
 ## ディレクトリ構成
 
 ```
@@ -46,6 +52,7 @@ Discordの今までのチャット履歴等を全て取得し、視覚化する�
 - backend/ : データベースと通信し、フロントエンドにJSONを提供するRESTAPI (Hono + TypeScript)
 - frontend/ : ダッシュボード (Next.js App Router + React) — analytics.ymkw.top および各ギルドのドメインで配信
 - db/ : スキーママイグレーションランナー (TypeScript) とSQLファイル
+- agent/ : AIがコマンドを実行するためのサンドボックスコンテナ (秘密なし・Unix socketサーバー)
 - scripts/ : 管理者パスワードハッシュ生成ツール
 ```
 

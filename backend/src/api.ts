@@ -23,6 +23,7 @@ import { normalizeHost, resolveGuildByHost, type GuildContext } from "./guilds";
 import { TOTAL_CACHE_WARM_INTERVAL_MS } from "./http";
 import { createRouteHelpers } from "./routes/context";
 import { register as registerAdmin } from "./routes/admin";
+import { register as registerAI } from "./routes/ai";
 import { register as registerChannels } from "./routes/channels";
 import { register as registerGraph } from "./routes/graph";
 import { register as registerMeta } from "./routes/meta";
@@ -68,6 +69,7 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
       WRITE_METHODS.has(c.req.method) &&
       !isBot &&
       !isPublicPath &&
+      !path.startsWith("/ai/") &&
       path !== "/admin/login" &&
       path !== "/admin/logout"
     ) {
@@ -159,6 +161,7 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
 
   registerMeta(app, h);
   registerAdmin(app, h);
+  registerAI(app, h);
   registerChannels(app, h);
   registerUsers(app, h);
   registerRanking(app, h);

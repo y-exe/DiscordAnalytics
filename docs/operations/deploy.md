@@ -18,8 +18,18 @@ GitHub Actions (`ghcr-publish.yml`) が `main` へのpushを受け、`bun run ch
 | --- | --- |
 | build-and-push-frontend | `ghcr.io/y-exe/discord-analytics-frontend` (統合コンテナ: Next.js SSR + `/api` Honoマウント) |
 | build-and-push-bot | `ghcr.io/y-exe/discord-analytics-bot` (収集Bot) |
+| build-and-push-agent | `ghcr.io/y-exe/discord-analytics-agent` (AIコマンド実行専用コンテナ。秘密なし) |
 
-コンテキストはリポジトリルートです (共有ソースを含めるため)。
+コンテキストはリポジトリルートです (共有ソースを含めるため)。agentイメージのみ `agent/` をコンテキストにします。
+
+## AI機能の配備
+
+frontend Podにagentサイドカーを追加し、AI機能 (`/ai`) を有効にします。詳細は [AIページ](../guide/ai.md) 参照。
+
+- frontendのDeploymentにagentコンテナを追加し、両コンテナで `agent-sock` (emptyDir) を `/agent-sock` にマウントする
+- frontend側: `AI_AGENT_SOCKET=/agent-sock/agent.sock`、Secretに `DEEPSEEK_API_KEY` を追加 (`AI_REQUIRE_ADMIN` は既定true)
+- agent側: envFromなし (秘密を渡さない)、`fsGroup: 1000` でsocketファイルをnodeユーザーが作成できるようにする
+- マイグレーション: `db/migrations/013_ai_chat.sql` (`cd db && bun run migrate`)
 
 > [!NOTE]
 > 2026-11-24にイメージ・内部名から固有要素 (ymkw) を除去しました: イメージ名は `discord-analytics-backend/bot/frontend`、ログプレフィックスは `discord-analytics-api:`、ディスクキャッシュは `discord_analytics_diskcache_v14`、管理者cookieは `__Secure-analytics_admin`、Botの月次ロール進捗キーは `discord-analytics-monthly-role:`。イメージ名変更に合わせて vpsリポジトリの k3sマニフェスト (Deployment/Service/Secret名・image参照) も同時にリネームしてください (`ymkw-frontend` → `discord-analytics-frontend` 等)。

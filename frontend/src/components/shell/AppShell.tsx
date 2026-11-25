@@ -10,6 +10,7 @@ import {
   Menu,
   Moon,
   Share2,
+  Sparkles,
   Sun,
   Users,
   X,
@@ -59,6 +60,7 @@ export function usePendingBar(active: boolean) {
 
 const NAV_ITEMS = [
   { key: "summary", label: "統計", Icon: ChartColumn },
+  { key: "ai", label: "AI", Icon: Sparkles },
   { key: "members", label: "メンバー", Icon: Users },
   { key: "relation", label: "共通のかかわり", Icon: Share2 },
   { key: "compare", label: "比較", Icon: GitCompareArrows },
@@ -109,6 +111,8 @@ function navHref(itemKey: string, period: Period): string {
     // サマリーはルート (+mクエリ) 形式に統一
     return periodHref("/", period);
   }
+  // AIページは期間の概念を持たないためmクエリを付けない
+  if (itemKey === "ai") return "/ai";
   const path = itemKey === "channels" ? "/channels" : `/${itemKey}`;
   return periodHref(path, period);
 }
@@ -221,12 +225,8 @@ function SidebarBody({
             onClick={onNavigate}
             className="flex items-center gap-3 rounded-xl hover:opacity-80 transition-opacity"
           >
-            {guild.iconUrl ? (
+            {guild.iconUrl && (
               <img src={guild.iconUrl} alt="" className="h-10 w-10 rounded-xl object-cover" />
-            ) : (
-              <div className="grid h-10 w-10 place-items-center rounded-xl bg-sidebar-active">
-                <ChartColumn className="h-5 w-5 text-sidebar-text-strong" aria-hidden="true" />
-              </div>
             )}
             <div className="min-w-0">
               <p
@@ -337,6 +337,13 @@ export default function AppShell({
         <GuildNameContext value={guild.name}>
           <FooterActionContext value={setFooterAction}>
             <PendingBarContext value={setPending}>
+              {/* キーボード利用者向けスキップリンク (フォーカス時のみ表示) */}
+              <a
+                href="#main-content"
+                className="sr-only z-50 focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:rounded-lg focus:bg-card focus:px-3 focus:py-2 focus:text-sm focus:font-bold focus:text-foreground focus:shadow-lg"
+              >
+                本文へスキップ
+              </a>
               {/* 読み込み中インジケーター: サイドバー横のコンテンツ列最上部に固定 */}
               <div
                 aria-hidden="true"
@@ -344,7 +351,10 @@ export default function AppShell({
               >
                 <div className="loading-bar h-full w-1/3 rounded-full bg-accent-data blur-[2px]" />
               </div>
-              <main className="mx-auto w-full max-w-7xl flex-1 px-4 pb-10 pt-6 md:px-8 md:pt-8">
+              <main
+                id="main-content"
+                className="mx-auto w-full max-w-7xl flex-1 px-4 pb-10 pt-6 md:px-8 md:pt-8"
+              >
                 {children}
               </main>
               <FooterSection domain={siteDomain} action={footerAction} />
