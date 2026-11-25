@@ -13,8 +13,10 @@ export interface RankingComponentOptions {
   allUrl?: string | null;
   /** 除外チャンネルの注記行。nullで非表示 */
   excludedNote?: string | null;
-  /** 追加の注記行 (既定ギルドの「プラチャ」案内など)。nullで非表示 */
+  /** 追加の注記行 (集約チャンネルの案内など)。nullで非表示 */
   extraNote?: string | null;
+  /** 集約チャンネルの表示名 (extraNote未指定時の注記文に使う) */
+  privateChatLabel?: string;
   /** ヘッダーのサムネイル (ギルドアイコン等)。指定時はセクション+サムネイル構造になる */
   thumbnail?: string | null;
 }
@@ -85,7 +87,7 @@ export function buildRankingComponent(
   const extraNote =
     options.extraNote !== undefined
       ? options.extraNote
-      : "-# <:4_:1453234089980334255> **プラチャ内の発言もカウントされます。**";
+      : `-# <:4_:1453234089980334255> **${options.privateChatLabel ?? "その他"}内の発言もカウントされます。**`;
 
   if (month === 12) text("**🎍あけましておめでとうございます🎍**");
 
@@ -141,6 +143,7 @@ export function buildRankingComponent(
 export function rankingComponentNotes(
   excludedChannelIds: readonly string[],
   privateChatCategoryIds: readonly unknown[] = [],
+  privateChatLabel = "その他",
 ): RankingComponentOptions {
   const excludedNote =
     excludedChannelIds.length === 1
@@ -150,7 +153,7 @@ export function rankingComponentNotes(
         : null;
   const extraNote =
     privateChatCategoryIds.length > 0
-      ? "-# <:4_:1453234089980334255> **プラチャ内の発言もカウントされます。**"
+      ? `-# <:4_:1453234089980334255> **${privateChatLabel}内の発言もカウントされます。**`
       : null;
   return { excludedNote, extraNote };
 }

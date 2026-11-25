@@ -265,7 +265,7 @@ export function ActivityCalendar({
 
 /** 横並びの2カラムセクション */
 export function TwoColumns({ children }: { children: ReactNode }) {
-  return <div className="grid gap-4 lg:grid-cols-2">{children}</div>;
+  return <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">{children}</div>;
 }
 
 /* ------------------------------ 統計グリッド ------------------------------ */
@@ -430,7 +430,7 @@ export function HeatDialogContent({
             : { label: "ピークスロット", value: "—" },
         ]}
       />
-      <div className="mt-5 grid gap-4 lg:grid-cols-2">
+      <div className="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-2">
         <div>
           <p className="mb-2 text-sm font-black text-foreground">曜日別の発言数</p>
           <CategoryBarChart data={dowData} height={220} />
@@ -479,7 +479,9 @@ export function TrendDialogContent({
         <DailyTrendChart points={points} height={300} />
       </div>
       {secondary.length > 0 && (
-        <div className={`mt-5 grid gap-4 ${secondary.length > 1 ? "lg:grid-cols-2" : ""}`}>
+        <div
+          className={`mt-5 grid grid-cols-1 gap-4 ${secondary.length > 1 ? "lg:grid-cols-2" : ""}`}
+        >
           {secondary.map((s) => (
             <div key={s.title}>
               <p className="mb-2 text-sm font-black text-foreground">{s.title}</p>

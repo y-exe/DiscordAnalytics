@@ -27,7 +27,15 @@ export function useSequentialReveal(
   order: string[],
   isReady: (id: string) => boolean,
 ): { ready: (id: string) => boolean; reset: () => void } {
-  const [revealed, setRevealed] = useState<Record<string, boolean>>({});
+  // 初回レンダリング (SSR含む) 時点でデータが揃っているカードは即表示とする。
+  // SSR事前取得済みのKPI等がスケルトン→ハイドレート後の数字差し替えになるのを防ぐ。
+  const [revealed, setRevealed] = useState<Record<string, boolean>>(() => {
+    const initial: Record<string, boolean> = {};
+    for (const id of order) {
+      if (isReady(id)) initial[id] = true;
+    }
+    return initial;
+  });
   const queueRef = useRef<string[]>([]);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 

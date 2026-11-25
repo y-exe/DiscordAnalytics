@@ -7,19 +7,13 @@ import {
   DiscordAPIError,
   Events,
   MessageFlags,
-  PermissionsBitField,
   type SendableChannels,
   StringSelectMenuBuilder,
   StringSelectMenuOptionBuilder,
 } from "discord.js";
 import type { Pool, PoolClient } from "pg";
-import {
-  ANNOUNCE_CHANNEL_ID,
-  EXCLUDED_CHANNEL_IDS,
-  GUILD_ID,
-  KING_ROLE_ID,
-  OWNER_ID,
-} from "../config";
+import { ANNOUNCE_CHANNEL_ID, EXCLUDED_CHANNEL_IDS, GUILD_ID, KING_ROLE_ID } from "../config";
+import { isGuildManager } from "../domain/permissions";
 import { updateMonthlyRoleOnce } from "../monthlyRole";
 import {
   dashboardUrl,
@@ -95,11 +89,15 @@ function buildMonthSelectRow(): ActionRowBuilder<StringSelectMenuBuilder> {
 /** ギルド設定からランキング描画の注記・URLを組み立てる */
 function rankingComponentOptions(config: GuildConfigWithDisplay | null): RankingComponentOptions {
   if (!config) return {};
-  const privateChatCategoryIds = config.displayConfig?.privateChatCategoryIds;
-  return rankingComponentNotes(
-    config.excludedChannelIds,
-    Array.isArray(privateChatCategoryIds) ? privateChatCategoryIds : [],
-  );
+  const display = config.displayConfig ?? {};
+  const privateChatCategoryIds = Array.isArray(display.privateChatCategoryIds)
+    ? display.privateChatCategoryIds
+    : [];
+  const label =
+    typeof display.privateChatLabel === "string" && display.privateChatLabel.trim()
+      ? display.privateChatLabel.trim()
+      : "その他";
+  return rankingComponentNotes(config.excludedChannelIds, privateChatCategoryIds, label);
 }
 
 export function buildRankingContainer(
@@ -357,8 +355,7 @@ async function handleAllCommand(
 }
 
 function canManageGuild(interaction: ChatInputCommandInteraction): boolean {
-  if (interaction.user.id === OWNER_ID) return true;
-  return interaction.memberPermissions?.has(PermissionsBitField.Flags.ManageGuild) ?? false;
+  return isGuildManager(interaction);
 }
 
 export function loadRanking(client: Client, pool: Pool): () => void {
@@ -397,6 +394,10 @@ export function loadRanking(client: Client, pool: Pool): () => void {
   };
   client.once(Events.ClientReady, () => {
     if (stopped) return;
+    // ローカル開発環境 (PGlite) ではロール管理を行わない。
+    // 単一セッションのPGliteではトランザクション中に他接続のクエリが全て待たされ、
+    // 重い集計をトランザクション内で行うとローカルBot全体が凍結するため。
+    if (process.env.DISABLE_MONTHLY_ROLE === "1") return;
     void checkMonthlyRole();
     timer = setInterval(() => void checkMonthlyRole(), 60_000);
   });

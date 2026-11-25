@@ -50,6 +50,8 @@ export default async function RelationPage({ searchParams }: PageProps) {
   return (
     <>
       <DiscordComponentEmbedScript payload={embed} />
+      {/* グラフビューはクライアント描画のため、h1はサーバー側で出す (スクリーンリーダー/SEO用) */}
+      <h1 className="sr-only">{`共通のかかわり (${label})`}</h1>
       <RelationGraphView period={period} />
     </>
   );

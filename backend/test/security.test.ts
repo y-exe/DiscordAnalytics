@@ -440,15 +440,26 @@ test("管理セッションの往復と改竄検出", () => {
 test("管理系Originは同一オリジンまたは許可リストで検証される", async () => {
   const cfg = await config.loadConfig();
   // Originなしは拒否 (POSTのCSRF防御)
-  assert.equal(adminAuth.adminOriginAllowed(undefined, "analytics.ymkw.top", cfg.allowedOrigins), false);
+  assert.equal(
+    adminAuth.adminOriginAllowed(undefined, "analytics.ymkw.top", cfg.allowedOrigins),
+    false,
+  );
   // 他オリジンは拒否
   assert.equal(
-    adminAuth.adminOriginAllowed("https://attacker.example", "analytics.ymkw.top", cfg.allowedOrigins),
+    adminAuth.adminOriginAllowed(
+      "https://attacker.example",
+      "analytics.ymkw.top",
+      cfg.allowedOrigins,
+    ),
     false,
   );
   // リクエスト先ホストと一致するOriginは許可 (テナントドメインでも成立)
   assert.equal(
-    adminAuth.adminOriginAllowed("https://analytics.ymkw.top", "analytics.ymkw.top", cfg.allowedOrigins),
+    adminAuth.adminOriginAllowed(
+      "https://analytics.ymkw.top",
+      "analytics.ymkw.top",
+      cfg.allowedOrigins,
+    ),
     true,
   );
   // 環境変数の許可リストも有効
@@ -638,10 +649,7 @@ test("マウント経由のピア解決: 信頼ホップを剥がした直近の
     peerIp: "9.9.9.9",
     trustedPeer: true,
   });
-  assert.equal(
-    config.getClientIp("9.9.9.9", "198.51.100.7", true, cfRanges, true),
-    "9.9.9.9",
-  );
+  assert.equal(config.getClientIp("9.9.9.9", "198.51.100.7", true, cfRanges, true), "9.9.9.9");
   // CFなしでエッジ維持ならピアをそのまま使う
   assert.equal(config.getClientIp("203.0.113.5", undefined, true, [], true), "203.0.113.5");
   // LAN直叩き (Traefik直拍) は末尾ピアを実ピアとしCFヘッダーは信頼しない

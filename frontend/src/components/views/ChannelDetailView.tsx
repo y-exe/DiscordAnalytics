@@ -577,8 +577,8 @@ export default function ChannelDetailView({
           },
           {
             id: "rank-messages",
-            // 文字数王があるときは1列、ないときは2列で最多発言日と並べて列を埋める
-            className: hasChars ? "" : "xl:col-span-2",
+            // 発言王は最も注目するカードなので横2列で一番左に置く
+            className: "xl:col-span-2",
             node: (
               <RankTopCard
                 title="発言王"
@@ -614,6 +614,43 @@ export default function ChannelDetailView({
                   hrefQuery={`m=${period.key}`}
                 />
                 <div className="mt-5">{dlg.topMembers.extra}</div>
+              </div>
+            ),
+          },
+          {
+            id: "rank-dates",
+            // 文字数王があるときは1列、ないときは2列で発言王の横を埋める
+            className: hasChars ? "" : "xl:col-span-2",
+            node: (
+              <RankTopCard
+                title="最多発言日"
+                note="このチャンネルで最も盛り上がった日 トップ5"
+                unit="件"
+                emptyText="データがありません"
+                loading={!ready("rank-dates")}
+                items={topDates.map((entry) => ({
+                  user_id: `date-${entry.date}`,
+                  display_name: entry.date.replaceAll("-", "/"),
+                  count: entry.count,
+                }))}
+              />
+            ),
+            dialog: (
+              <div className="pr-7">
+                <DialogStats className="mb-4" items={dlg.topDays.stats} />
+                <RankTopCard
+                  bare
+                  title="最多発言日"
+                  note="このチャンネルで最も盛り上がった日 トップ5"
+                  unit="件"
+                  emptyText="データがありません"
+                  items={topDates.map((entry) => ({
+                    user_id: `date-${entry.date}`,
+                    display_name: entry.date.replaceAll("-", "/"),
+                    count: entry.count,
+                  }))}
+                />
+                <div className="mt-5">{dlg.topDays.extra}</div>
               </div>
             ),
           },
@@ -702,42 +739,6 @@ export default function ChannelDetailView({
                 },
               ]
             : []),
-          {
-            id: "rank-dates",
-            className: "xl:col-span-2",
-            node: (
-              <RankTopCard
-                title="最多発言日"
-                note="このチャンネルで最も盛り上がった日 トップ5"
-                unit="件"
-                emptyText="データがありません"
-                loading={!ready("rank-dates")}
-                items={topDates.map((entry) => ({
-                  user_id: `date-${entry.date}`,
-                  display_name: entry.date.replaceAll("-", "/"),
-                  count: entry.count,
-                }))}
-              />
-            ),
-            dialog: (
-              <div className="pr-7">
-                <DialogStats className="mb-4" items={dlg.topDays.stats} />
-                <RankTopCard
-                  bare
-                  title="最多発言日"
-                  note="このチャンネルで最も盛り上がった日 トップ5"
-                  unit="件"
-                  emptyText="データがありません"
-                  items={topDates.map((entry) => ({
-                    user_id: `date-${entry.date}`,
-                    display_name: entry.date.replaceAll("-", "/"),
-                    count: entry.count,
-                  }))}
-                />
-                <div className="mt-5">{dlg.topDays.extra}</div>
-              </div>
-            ),
-          },
           {
             id: "trend",
             className: "md:col-span-2 xl:col-span-2",

@@ -18,6 +18,8 @@
         "pg": "^8.23.1",
       },
       "devDependencies": {
+        "@electric-sql/pglite": "^0.5.8",
+        "@electric-sql/pglite-socket": "0.3.0",
         "@types/node": "^22.20.5",
         "@types/pg": "^8.23.1",
         "typescript": "^5.9.3",
@@ -61,6 +63,9 @@
       },
     },
   },
+  "patchedDependencies": {
+    "@electric-sql/pglite-socket@0.3.0": "patches/@electric-sql%2Fpglite-socket@0.3.0.patch",
+  },
   "overrides": {
     "undici": "^6.29.1",
   },
@@ -94,6 +99,24 @@
     "@discordjs/util": ["@discordjs/util@1.2.0", "", { "dependencies": { "discord-api-types": "^0.38.33" } }, "sha512-3LKP7F2+atl9vJFhaBjn4nOaSWahZ/yWjOvA4e5pnXkt2qyXRCHLxoBQy81GFtLGCq7K9lPm9R517M1U+/90Qg=="],
 
     "@discordjs/ws": ["@discordjs/ws@1.2.3", "", { "dependencies": { "@discordjs/collection": "^2.1.0", "@discordjs/rest": "^2.5.1", "@discordjs/util": "^1.1.0", "@sapphire/async-queue": "^1.5.2", "@types/ws": "^8.5.10", "@vladfrangu/async_event_emitter": "^2.2.4", "discord-api-types": "^0.38.1", "tslib": "^2.6.2", "ws": "^8.17.0" } }, "sha512-wPlQDxEmlDg5IxhJPuxXr3Vy9AjYq5xCvFWGJyD7w7Np8ZGu+Mc+97LCoEc/+AYCo2IDpKioiH0/c/mj5ZR9Uw=="],
+
+    "@electric-sql/pglite": ["@electric-sql/pglite@0.5.17", "", {}, "sha512-8SvKjiUjaU+0O0dbxjOfN+jXz14TEqDWbwDkYOW1aQ11y/ph2JvFVI27ABBo5nfw+ZfSqy4hKCNlbnbB1TDE+g=="],
+
+    "@electric-sql/pglite-age": ["@electric-sql/pglite-age@0.1.0", "", { "peerDependencies": { "@electric-sql/pglite": "0.6.0" } }, "sha512-sdS1PEywMCb4h2Dq0EKOJhDXwP2ASpKfqnZx8D3ZRdXSX3cRPN+VBctyU93X7MESZ2r8acRdarel+cSW9ca3JQ=="],
+
+    "@electric-sql/pglite-pg_hashids": ["@electric-sql/pglite-pg_hashids@0.1.0", "", { "peerDependencies": { "@electric-sql/pglite": "0.6.0" } }, "sha512-P+6qfrue+NMPII+0yHD/4DYfrgzstB8FJbW5jLOAkt6GAF5tPfEXGarsRzPkwfp/kSyzqJq5mszrG46mlgMoKA=="],
+
+    "@electric-sql/pglite-pg_ivm": ["@electric-sql/pglite-pg_ivm@0.1.0", "", { "peerDependencies": { "@electric-sql/pglite": "0.6.0" } }, "sha512-CIuKaJZ3GwaFl7fKg82rCFI9roMJzxVZsn7SoPQkzYvyuAOxh9Io3yfDToNmA5GsUJZe53WJC13x8TaGEPHEUA=="],
+
+    "@electric-sql/pglite-pg_textsearch": ["@electric-sql/pglite-pg_textsearch@0.1.0", "", { "peerDependencies": { "@electric-sql/pglite": "0.6.0" } }, "sha512-8W68wLODJV4tmx9V4PN8uw0SKKaYApIi4rl8GiR3jLeQyBynWyTEGhRHPfA4R5aDgwjJXzc8jG93RoudqjORrg=="],
+
+    "@electric-sql/pglite-pg_uuidv7": ["@electric-sql/pglite-pg_uuidv7@0.1.0", "", { "peerDependencies": { "@electric-sql/pglite": "0.6.0" } }, "sha512-Dv9CpGgy8PRgmlcR9hrXX2QkDFTmmS79fWV7+owTJymqDEyxO5oCdsRTfGvHGx+KNwTD2Y0Y0Z5UKhROAhebIQ=="],
+
+    "@electric-sql/pglite-pgtap": ["@electric-sql/pglite-pgtap@0.1.0", "", { "peerDependencies": { "@electric-sql/pglite": "0.6.0" } }, "sha512-quyvYcin3aPBj4fqUk0rXTypH6Rnj6VoBMX/YDQI4Md/6sffEVNAw+ZdFAzXdEXLCzKZ3e/RRgNclhXUTjCW4w=="],
+
+    "@electric-sql/pglite-pgvector": ["@electric-sql/pglite-pgvector@0.1.0", "", { "peerDependencies": { "@electric-sql/pglite": "0.6.0" } }, "sha512-2iSQwI8av+BI8rnsq6NUT6coXX/Yrc6Qu5unfS9Z4znkUQjk3KS31DsCoU+uQKsb73YUPQ60e8+ZsFAcTecX/A=="],
+
+    "@electric-sql/pglite-socket": ["@electric-sql/pglite-socket@0.3.0", "", { "peerDependencies": { "@electric-sql/pglite": "0.6.0", "@electric-sql/pglite-age": "0.1.0", "@electric-sql/pglite-pg_hashids": "0.1.0", "@electric-sql/pglite-pg_ivm": "0.1.0", "@electric-sql/pglite-pg_textsearch": "0.1.0", "@electric-sql/pglite-pg_uuidv7": "0.1.0", "@electric-sql/pglite-pgtap": "0.1.0", "@electric-sql/pglite-pgvector": "0.1.0" }, "bin": { "pglite-server": "dist/scripts/server.js" } }, "sha512-u3FdqFVzVyD0197yoTUGvZLq29kNbUyuvMllq/oJvZK+MhE9jz1MH0eg8iS9cTgtMmgkYg4NqSYdjDBCova/PA=="],
 
     "@sapphire/async-queue": ["@sapphire/async-queue@1.5.5", "", {}, "sha512-cvGzxbba6sav2zZkH8GPf2oGk9yYoD5qrNWdu9fRehifgnFZJMV+nuy2nON2roRO4yQQ+v7MK/Pktl/HgfsUXg=="],
 

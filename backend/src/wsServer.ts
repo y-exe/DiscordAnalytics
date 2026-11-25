@@ -132,8 +132,8 @@ export function startWsServer(): void {
         return undefined;
       },
       websocket: {
-        // DoS対策: 1メッセージはチャット送信に十分な16KBまで。アイドル切断は120秒 (Bunの上限)
-        maxPayloadLength: 16_384,
+        // DoS対策: 履歴込みのチャット送信に収まるサイズ。アイドル切断は120秒 (Bunの上限)
+        maxPayloadLength: 262_144,
         idleTimeout: 120,
         async message(ws, raw) {
           const data = ws.data as WsData;
@@ -144,19 +144,16 @@ export function startWsServer(): void {
             return;
           }
           let message = "";
-          let threadId = "";
-          let editOf = 0;
+          let history: unknown = undefined;
           try {
             const parsed = JSON.parse(String(raw)) as {
               type?: string;
               message?: string;
-              threadId?: string;
-              editOf?: number | string;
+              history?: unknown;
             };
             if (parsed.type !== "chat") return;
             message = String(parsed.message ?? "");
-            threadId = String(parsed.threadId ?? "");
-            editOf = Number(parsed.editOf ?? 0);
+            history = parsed.history;
           } catch {
             ws.send(JSON.stringify({ type: "error", message: "Invalid JSON body" }));
             return;
@@ -170,8 +167,7 @@ export function startWsServer(): void {
             clientIp: data.clientIp,
             privileged: data.privileged,
             message,
-            threadId,
-            editOf,
+            history,
           });
           if (!prepared.ok) {
             ws.send(

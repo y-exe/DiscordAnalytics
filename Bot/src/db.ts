@@ -32,6 +32,10 @@ export interface BotPoolOptions {
   max: number;
   applicationName: string;
   statementTimeoutMs?: number;
+  /** 新規接続の確立待ち上限 (ミリ秒)。デフォルト10秒で即エラーにする */
+  connectionTimeoutMs?: number;
+  /** 1クエリのクライアント側タイムアウト (ミリ秒)。デフォルト60秒 */
+  queryTimeoutMs?: number;
 }
 
 export function createPool(dsn: string, options: BotPoolOptions): Pool {
@@ -45,6 +49,10 @@ export function createPool(dsn: string, options: BotPoolOptions): Pool {
     max: options.max,
     ssl: resolveSslOptions(dsn),
     options: startupOptions,
+    // 接続やクエリが永久待ちにならないようにする (PGliteのソケットが稀に応答しないため)
+    connectionTimeoutMillis: options.connectionTimeoutMs ?? 10_000,
+    query_timeout: options.queryTimeoutMs ?? 60_000,
+    keepAlive: true,
   });
 }
 

@@ -52,7 +52,10 @@ export const TRUSTED_EDGE_PROXY_IPS = ["10.77.0.1"];
 export function getTrustedEdgeIps(): string[] {
   const raw = (process.env.TRUSTED_EDGE_PROXY_IPS || "").trim();
   if (!raw) return TRUSTED_EDGE_PROXY_IPS;
-  return raw.split(",").map((entry) => entry.trim()).filter(Boolean);
+  return raw
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
 }
 
 /**

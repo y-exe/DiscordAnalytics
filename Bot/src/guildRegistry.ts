@@ -17,6 +17,67 @@ export interface GuildConfigWithDisplay extends GuildConfigRow {
   displayConfig: Record<string, unknown> | null;
 }
 
+/** Web表示まわりの設定 (display_config JSONBの読みやすい形) */
+export interface DisplaySettings {
+  /** 集約チャンネルの表示名。「プラチャ」等。空なら「その他」 */
+  privateChatLabel: string;
+  /** このカテゴリ配下のチャンネルを集約する (空なら集約しない) */
+  privateChatCategoryIds: string[];
+  /** Webサイトに表示するチャンネルのホワイトリスト (空なら全表示) */
+  whitelistChannelIds: string[];
+  /** Webサイトから隠すチャンネル (ホワイトリスト未設定時に有効) */
+  hiddenChannelIds: string[];
+  /** Web表示モード (リストが空でも編集を続けられるように保存する。未保存なら undefined) */
+  visibilityMode?: "all" | "whitelist" | "hidden";
+  /** Webサイトのサイドバー下段に寄せるカテゴリ */
+  bottomChannelCategoryIds: string[];
+  /** 設定の編集を許可するロール (空ならサーバー管理権限のみ) */
+  setupManagerRoleIds: string[];
+  /** 初回セットアップウィザードを完了済みか */
+  setupDone: boolean;
+}
+
+function idList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.map((entry) => String(entry)).filter((entry) => /^\d+$/.test(entry));
+}
+
+export function readDisplaySettings(config: GuildConfigWithDisplay): DisplaySettings {
+  const raw = config.displayConfig ?? {};
+  const mode = raw.visibilityMode;
+  return {
+    privateChatLabel:
+      typeof raw.privateChatLabel === "string" && raw.privateChatLabel.trim()
+        ? raw.privateChatLabel.trim()
+        : "その他",
+    privateChatCategoryIds: idList(raw.privateChatCategoryIds),
+    whitelistChannelIds: idList(raw.whitelistChannelIds),
+    hiddenChannelIds: idList(raw.hiddenChannelIds),
+    visibilityMode:
+      mode === "all" || mode === "whitelist" || mode === "hidden" ? mode : undefined,
+    bottomChannelCategoryIds: idList(raw.bottomChannelCategoryIds),
+    setupManagerRoleIds: idList(raw.setupManagerRoleIds),
+    setupDone: raw.setupDone === true,
+  };
+}
+
+/** display_config にパッチをマージする (NULLでも動く) */
+export async function mergeDisplayConfig(
+  pool: Pool,
+  guildId: string,
+  patch: Record<string, unknown>,
+): Promise<void> {
+  await pool.query(
+    `
+    UPDATE guilds
+    SET display_config = COALESCE(display_config, '{}'::jsonb) || $2::jsonb,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE guild_id = $1
+    `,
+    [guildId, JSON.stringify(patch)],
+  );
+}
+
 interface GuildRow {
   guild_id: string | bigint;
   name: string;

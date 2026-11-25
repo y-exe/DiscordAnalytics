@@ -52,6 +52,9 @@ export function niceStep(raw: number) {
 export function useElementWidth<T extends HTMLElement>(initial: number) {
   const ref = useRef<T>(null);
   const [width, setWidth] = useState(initial);
+  // 実測が済むまで初期値幅のSVGを描かせない (初期値幅がモバイルより広いと
+  // auto列グリッドが内容幅まで膨らみ、カードが画面を横に貫通するため)
+  const [ready, setReady] = useState(false);
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
@@ -61,7 +64,10 @@ export function useElementWidth<T extends HTMLElement>(initial: number) {
       if (!el) return 0;
       const w = Math.round(el.clientWidth);
       // SSR直後など一時的に幅が取れない場合は初期値のままにする (0での描画を防ぐ)
-      if (w > 0) setWidth(w);
+      if (w > 0) {
+        setWidth(w);
+        setReady(true);
+      }
       return w;
     };
     update();
@@ -84,7 +90,7 @@ export function useElementWidth<T extends HTMLElement>(initial: number) {
       window.removeEventListener("resize", update);
     };
   }, [initial]);
-  return [ref, width] as const;
+  return [ref, width, ready] as const;
 }
 
 /** Clear a hover/tap selection when the user taps outside the chart (touch) */

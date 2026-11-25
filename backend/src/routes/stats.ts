@@ -400,7 +400,7 @@ export function register(app: Hono<AppEnv>, h: RouteHelpers): void {
           CASE
               WHEN c.category_id = ANY($3::bigint[]) THEN
                   (CASE WHEN c.name LIKE '% / %' THEN btrim(split_part(c.name, '/', 1)) ELSE c.name END)
-              ELSE 'プラチャ'
+              ELSE $5::text
           END AS name,
           count(*) AS count
       FROM messages m
@@ -420,7 +420,13 @@ export function register(app: Hono<AppEnv>, h: RouteHelpers): void {
       LIMIT 10
       `,
       privateChatCategoryIds.length > 0
-        ? [startDate, endDate, privateChatCategoryIds, guild.guildId]
+        ? [
+            startDate,
+            endDate,
+            privateChatCategoryIds,
+            guild.guildId,
+            guild.displayConfig.privateChatLabel,
+          ]
         : [startDate, endDate, guild.guildId],
     );
     const res = rows.map((row) => ({ name: row.name as string, value: Number(row.count) }));
@@ -453,6 +459,8 @@ export function register(app: Hono<AppEnv>, h: RouteHelpers): void {
       params.push(endDate);
       filters.push(`m.created_at <= $${params.length}`);
     }
+    const labelParam = `$${params.length + 1}::text`;
+    if (privateChatCategoryIds.length > 0) params.push(guild.displayConfig.privateChatLabel);
 
     const { rows } = await pool.query(
       privateChatCategoryIds.length > 0
@@ -461,7 +469,7 @@ export function register(app: Hono<AppEnv>, h: RouteHelpers): void {
           CASE
               WHEN c.category_id = ANY($1::bigint[]) THEN
                   (CASE WHEN c.name LIKE '% / %' THEN btrim(split_part(c.name, '/', 1)) ELSE c.name END)
-              ELSE 'プラチャ'
+              ELSE ${labelParam}
           END AS name,
           count(*) AS count
       FROM messages m

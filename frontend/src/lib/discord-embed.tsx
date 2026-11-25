@@ -83,7 +83,11 @@ export function buildComponentEmbed(options: ComponentEmbedOptions): Record<stri
     payload = assemble(shorten(description, 160), footer, buttons ?? []);
   }
   if (payloadBytes(payload) > PAYLOAD_BYTE_LIMIT && footer) {
-    payload = assemble(description ? shorten(description, 160) : undefined, undefined, buttons ?? []);
+    payload = assemble(
+      description ? shorten(description, 160) : undefined,
+      undefined,
+      buttons ?? [],
+    );
   }
   if (payloadBytes(payload) > PAYLOAD_BYTE_LIMIT) {
     payload = assemble(

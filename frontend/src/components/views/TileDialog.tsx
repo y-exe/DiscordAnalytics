@@ -104,6 +104,15 @@ export function TileExpandable({
   const [open, setOpen] = useState(false);
   return (
     <div
+      role="button"
+      tabIndex={0}
+      aria-haspopup="dialog"
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          setOpen(true);
+        }
+      }}
       className={`h-full cursor-pointer ${className}`}
       onClick={(e) => {
         if ((e.target as HTMLElement).closest("a,button")) return;

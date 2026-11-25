@@ -66,12 +66,16 @@ export function register(app: Hono<AppEnv>, h: RouteHelpers): void {
       [guild.guildId],
     );
 
-    const { whitelistChannelIds, bottomChannelCategoryIds } = guild.displayConfig;
+    const { whitelistChannelIds, hiddenChannelIds, privateChatLabel, bottomChannelCategoryIds } =
+      guild.displayConfig;
     const whitelist = new Set(whitelistChannelIds);
+    const hidden = new Set(hiddenChannelIds);
     const bottomCategories = new Set(bottomChannelCategoryIds);
-    // ホワイトリスト未設定のギルドは全チャンネルを表示する
+    // ホワイトリスト設定時はそのチャンネルのみ、未設定時は全チャンネルから非表示指定を除く
     const visibleRows =
-      whitelist.size > 0 ? rows.filter((row) => whitelist.has(String(row.channel_id))) : rows;
+      whitelist.size > 0
+        ? rows.filter((row) => whitelist.has(String(row.channel_id)))
+        : rows.filter((row) => !hidden.has(String(row.channel_id)));
     visibleRows.sort((a, b) => {
       const aBottom = a.category_id !== null && bottomCategories.has(String(a.category_id));
       const bBottom = b.category_id !== null && bottomCategories.has(String(b.category_id));
@@ -84,8 +88,8 @@ export function register(app: Hono<AppEnv>, h: RouteHelpers): void {
         ? [
             {
               id: guild.displayConfig.privateChatChannelId,
-              name: "プラチャ総合",
-              category: "プラチャ",
+              name: `${privateChatLabel}総合`,
+              category: privateChatLabel,
             },
           ]
         : []),

@@ -211,7 +211,6 @@ export default function MembersView({
                           className="inline-flex max-w-full items-center gap-2.5 rounded-xl px-2 py-1.5"
                         >
                           <Avatar
-                            userId={row.user_id}
                             src={row.avatar}
                             fallbackSrc={row.avatar_fallback}
                             className="h-9 w-9"

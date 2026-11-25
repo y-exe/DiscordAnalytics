@@ -4,18 +4,23 @@ import { API_URL } from "@/lib/api";
 
 /** /ai/chat のイベント (SSE・WebSocket共通形式) */
 export type AIChatEvent =
-  | { type: "start"; threadId: string; title: string; userMessageId: number }
+  | { type: "start" }
   | { type: "delta"; text: string }
   | { type: "tool_start" }
   | { type: "tool"; name: string; summary: string; output?: string }
-  | { type: "done"; threadId?: string; title?: string }
+  | { type: "done" }
   | { type: "error"; message: string };
+
+/** 文脈として送り返す過去のやり取り */
+export interface AIChatHistoryItem {
+  role: "user" | "assistant";
+  content: string;
+}
 
 export interface AIChatRequest {
   message: string;
-  threadId?: string;
-  /** 編集再送信: このai_messages.id以降を削り直す */
-  editOf?: number;
+  /** クライアントが保持している履歴 (サーバーは保存しない) */
+  history?: AIChatHistoryItem[];
 }
 
 /** /ai/chat がHTTPエラーを返したときの例外 (403判定などに使う) */
@@ -92,8 +97,7 @@ async function streamViaWebSocket(params: ChatParams): Promise<void> {
         JSON.stringify({
           type: "chat",
           message: params.message,
-          threadId: params.threadId,
-          editOf: params.editOf,
+          history: params.history,
         }),
       );
     };

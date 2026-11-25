@@ -37,7 +37,17 @@ import type { RouteHelpers } from "./context";
 
 /** 管理 (/admin/*) */
 export function register(app: Hono<AppEnv>, h: RouteHelpers): void {
-  const { cfg, cache, deps, getPeerIp, requireGuild, getChannelScopeIds, requireMonthAccess, monthCacheControl, adminRequestHost } = h;
+  const {
+    cfg,
+    cache,
+    deps,
+    getPeerIp,
+    requireGuild,
+    getChannelScopeIds,
+    requireMonthAccess,
+    monthCacheControl,
+    adminRequestHost,
+  } = h;
 
   app.get("/admin/session", (c) => {
     // 読み取り専用プローブのためOriginチェックは不要 (CookieはSameSite=Lax)。

@@ -1,11 +1,7 @@
 import type { Context } from "hono";
 import { getCookie } from "hono/cookie";
 import type { Pool } from "pg";
-import {
-  ADMIN_COOKIE_NAME,
-  isApiClient,
-  verifyAdminSession,
-} from "../adminAuth";
+import { ADMIN_COOKIE_NAME, isApiClient, verifyAdminSession } from "../adminAuth";
 import type { AppConfig } from "../config";
 import { normalizeHost, resolveGuildByHost, type GuildContext } from "../guilds";
 import { escapeLike, jsonError } from "../http";
@@ -46,7 +42,7 @@ export function createRouteHelpers(deps: AppDeps): RouteHelpers {
     channelId: string | null,
   ): Promise<string[] | null | Response> {
     if (!channelId) return null;
-    const { whitelistChannelIds, privateChatChannelId, privateChatCategoryIds } =
+    const { whitelistChannelIds, hiddenChannelIds, privateChatChannelId, privateChatCategoryIds } =
       guild.displayConfig;
     const isPrivateChat = channelId === privateChatChannelId && privateChatCategoryIds.length > 0;
 
@@ -71,7 +67,10 @@ export function createRouteHelpers(deps: AppDeps): RouteHelpers {
         return jsonError(404, "Channel not found");
       }
     } else {
-      // ホワイトリスト未設定のギルドは自ギルドの全チャンネルを対象にする
+      // ホワイトリスト未設定のギルドは自ギルドの全チャンネルを対象にする (非表示指定は除く)
+      if (hiddenChannelIds.includes(channelId)) {
+        return jsonError(404, "Channel not found");
+      }
       const { rows } = await pool.query(
         "SELECT 1 FROM channels WHERE channel_id = $1 AND guild_id = $2 LIMIT 1",
         [channelId, guild.guildId],

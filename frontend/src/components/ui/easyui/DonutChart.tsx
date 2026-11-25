@@ -162,7 +162,7 @@ export function DonutChart({
 }: DonutChartProps) {
   const reduce = useReducedMotion();
   const anim = animated && !reduce;
-  const [rootRef, rootW] = useElementWidth<HTMLDivElement>(560);
+  const [rootRef, rootW, measured] = useElementWidth<HTMLDivElement>(560);
   const [hidden, setHidden] = useState<number[]>([]);
   const [active, setActive] = useState<number | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -220,45 +220,53 @@ export function DonutChart({
         className,
       )}
     >
-      <div ref={wrapRef} className="relative shrink-0" style={{ width: D, height: H }}>
-        <svg
-          width={D}
-          height={H}
-          role="img"
-          aria-label={ariaLabel ?? `${semi ? "Gauge" : "Donut"} chart. Total ${formatValue(total)}`}
-          className="block overflow-visible"
-        >
-          {/* track */}
-          <path
-            d={
-              semi
-                ? arcPath(centre.x, centre.y, r, S + pad, S + A - pad)
-                : arcPath(centre.x, centre.y, r, 0, Math.PI * 1.9999)
+      <div
+        ref={wrapRef}
+        className="relative shrink-0"
+        style={{ width: D, height: H, maxWidth: "100%" }}
+      >
+        {measured && (
+          <svg
+            width={D}
+            height={H}
+            role="img"
+            aria-label={
+              ariaLabel ?? `${semi ? "Gauge" : "Donut"} chart. Total ${formatValue(total)}`
             }
-            fill="none"
-            strokeWidth={thickness}
-            strokeLinecap="round"
-            className="stroke-black/[0.05] dark:stroke-white/[0.06]"
-          />
-          {segs.map((sg, i) => (
-            <Arc
-              key={i}
-              centre={centre}
-              r={r}
-              a0={sg.a0}
-              a1={sg.a1}
-              color={sg.color}
-              width={sg.off ? 0 : active === i ? thickness + 4 : thickness}
-              dim={active !== null && active !== i}
-              animated={anim}
-              delay={0.12 + i * 0.09}
-              label={`${sg.label}: ${formatValue(sg.value)}`}
-              onEnter={() => setActive(i)}
-              onLeave={() => setActive(null)}
-              onClick={() => setActive((a) => (a === i ? null : i))}
+            className="block overflow-visible"
+          >
+            {/* track */}
+            <path
+              d={
+                semi
+                  ? arcPath(centre.x, centre.y, r, S + pad, S + A - pad)
+                  : arcPath(centre.x, centre.y, r, 0, Math.PI * 1.9999)
+              }
+              fill="none"
+              strokeWidth={thickness}
+              strokeLinecap="round"
+              className="stroke-black/[0.05] dark:stroke-white/[0.06]"
             />
-          ))}
-        </svg>
+            {segs.map((sg, i) => (
+              <Arc
+                key={i}
+                centre={centre}
+                r={r}
+                a0={sg.a0}
+                a1={sg.a1}
+                color={sg.color}
+                width={sg.off ? 0 : active === i ? thickness + 4 : thickness}
+                dim={active !== null && active !== i}
+                animated={anim}
+                delay={0.12 + i * 0.09}
+                label={`${sg.label}: ${formatValue(sg.value)}`}
+                onEnter={() => setActive(i)}
+                onLeave={() => setActive(null)}
+                onClick={() => setActive((a) => (a === i ? null : i))}
+              />
+            ))}
+          </svg>
+        )}
 
         {/* centre readout */}
         <div

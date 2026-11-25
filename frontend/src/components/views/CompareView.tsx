@@ -311,7 +311,10 @@ export default function CompareView({
       </div>
 
       {loadingChart && (
-        <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-5" aria-hidden="true">
+        <div
+          className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5"
+          aria-hidden="true"
+        >
           {selected.map((user) => (
             <div key={user.user_id} className="app-card-padded">
               <div className="flex items-center gap-2">
@@ -328,7 +331,7 @@ export default function CompareView({
       )}
 
       {summary.length > 0 && (
-        <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+        <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
           {summary.map((entry) => (
             <div key={entry.user.user_id} className="app-card-padded">
               <div className="flex items-center gap-2">

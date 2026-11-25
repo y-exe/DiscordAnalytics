@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import RestrictedMonthGate from "@/components/views/RestrictedMonthGate";
 import SummaryView from "@/components/views/SummaryView";
+import { fetchAPI } from "@/lib/api";
 import { DEFAULT_SITE_ORIGIN, getGuildBaseUrl, getGuildContext } from "@/lib/guild-context";
 import { isPublishedReportMonth } from "@/lib/report-period";
 import { defaultPeriod, parsePeriod, periodLabel } from "@/lib/period";
@@ -34,13 +35,13 @@ export async function generateMetadata({ searchParams }: PageProps): Promise<Met
       description,
       url,
       type: "website",
-      images: [`${base}/ranking.webp`],
+      images: [`${base}/og?m=${period.isAll ? "all" : period.key}`],
     },
     twitter: {
       card: "summary_large_image",
       title,
       description,
-      images: [`${base}/ranking.webp`],
+      images: [`${base}/og?m=${period.isAll ? "all" : period.key}`],
     },
   };
 }
@@ -52,6 +53,7 @@ export default async function SummaryPage({ searchParams }: PageProps) {
   const embedBase = baseUrl ? `${baseUrl}/api` : "https://api.ymkw.top";
 
   if (period.isAll) {
+    const initial = await fetchInitialParts({ isAll: true });
     return (
       <>
         <link
@@ -59,7 +61,7 @@ export default async function SummaryPage({ searchParams }: PageProps) {
           type="application/json"
           href={`${embedBase}/ranking/total/discord-embed`}
         />
-        <SummaryView year={null} month={null} isAll={true} />
+        <SummaryView year={null} month={null} isAll={true} initialParts={initial} />
       </>
     );
   }
@@ -67,6 +69,7 @@ export default async function SummaryPage({ searchParams }: PageProps) {
   const year = period.year ?? 0;
   const month = period.month ?? 0;
   const isPublished = isPublishedReportMonth(year, month);
+  const initial = isPublished ? await fetchInitialParts({ isAll: false, year, month }) : undefined;
   return (
     <>
       {isPublished && (
@@ -77,7 +80,7 @@ export default async function SummaryPage({ searchParams }: PageProps) {
         />
       )}
       {isPublished ? (
-        <SummaryView year={year} month={month} isAll={false} />
+        <SummaryView year={year} month={month} isAll={false} initialParts={initial} />
       ) : (
         <RestrictedMonthGate label={`${periodLabel(period)}のレポート`}>
           <SummaryView year={year} month={month} isAll={false} />
@@ -85,4 +88,25 @@ export default async function SummaryPage({ searchParams }: PageProps) {
       )}
     </>
   );
+}
+
+/** KPI・推移カードのデータをサーバー側で取得し、初回HTMLに埋め込む。
+ * これがないと初回表示がスケルトンのみになりLCP・SEOが大きく落ちる。
+ * 失敗時はundefined (クライアントが通常通り取得する)。 */
+async function fetchInitialParts(period: {
+  isAll: boolean;
+  year?: number;
+  month?: number;
+}): Promise<{ history: unknown; analysis: unknown } | undefined> {
+  const base = period.isAll ? "/total" : `/${period.year}/${period.month}`;
+  const [history, analysis] = await Promise.all([
+    fetchAPI(`/stats/history${base}`, { quiet: true, retries: 1 })
+      .then((res) => (res.ok ? res.json() : undefined))
+      .catch(() => undefined),
+    fetchAPI(`/stats/analysis${base}?extras=0`, { quiet: true, retries: 1 })
+      .then((res) => (res.ok ? res.json() : res.status === 404 ? null : undefined))
+      .catch(() => undefined),
+  ]);
+  if (history === undefined && analysis === undefined) return undefined;
+  return { history, analysis };
 }

@@ -46,7 +46,16 @@ import { monthlyRankingQuery } from "../../../shared/monthly-ranking";
 import { totalRankingQuery } from "../../../shared/total-ranking";
 /** ランキング (/ranking/*, /users/:id/rank/*) */
 export function register(app: Hono<AppEnv>, h: RouteHelpers): void {
-  const { cfg, cache, deps, getPeerIp, requireGuild, getChannelScopeIds, requireMonthAccess, monthCacheControl } = h;
+  const {
+    cfg,
+    cache,
+    deps,
+    getPeerIp,
+    requireGuild,
+    getChannelScopeIds,
+    requireMonthAccess,
+    monthCacheControl,
+  } = h;
 
   app.get("/ranking/monthly/:year/:month/discord-embed", async (c) => {
     const year = pathInt(c.req.param("year"));
@@ -87,6 +96,7 @@ export function register(app: Hono<AppEnv>, h: RouteHelpers): void {
         ...rankingComponentNotes(
           guild.excludedChannelIds,
           guild.displayConfig.privateChatCategoryIds,
+          guild.displayConfig.privateChatLabel,
         ),
         allUrl: base ? `${base}/all` : null,
       },
@@ -171,6 +181,7 @@ export function register(app: Hono<AppEnv>, h: RouteHelpers): void {
         ...rankingComponentNotes(
           guild.excludedChannelIds,
           guild.displayConfig.privateChatCategoryIds,
+          guild.displayConfig.privateChatLabel,
         ),
         allUrl: base ? `${base}/all` : null,
       }),
@@ -379,5 +390,4 @@ export function register(app: Hono<AppEnv>, h: RouteHelpers): void {
     cache.set(ckey, res, ttl);
     return jsonResponse(res, 200, headers);
   });
-
 }

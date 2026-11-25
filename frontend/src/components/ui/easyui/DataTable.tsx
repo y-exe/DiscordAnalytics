@@ -672,7 +672,7 @@ export function DataTable<T extends { id: Id }>({
             : "Sorted descending. Switch to ascending"
         }
         onClick={() => sort && setSort({ key: sort.key, dir: sort.dir === "asc" ? "desc" : "asc" })}
-        className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-black/[0.04] text-neutral-600 transition-opacity active:scale-[0.96] disabled:opacity-40 dark:bg-white/[0.05] dark:text-neutral-300 ${focus}`}
+        className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-black/[0.04] text-neutral-600 transition-opacity disabled:opacity-40 dark:bg-white/[0.05] dark:text-neutral-300 ${focus}`}
       >
         <SortIcon state={sort?.dir ?? null} />
       </button>
@@ -886,7 +886,7 @@ export function DataTable<T extends { id: Id }>({
             <button
               type="button"
               onClick={() => setQuery("")}
-              className={`h-9 rounded-xl bg-black/[0.05] px-3.5 text-[12.5px] font-medium text-neutral-700 transition-transform active:scale-[0.97] dark:bg-white/[0.07] dark:text-neutral-200 ${focus}`}
+              className={`h-9 rounded-xl bg-black/[0.05] px-3.5 text-[12.5px] font-medium text-neutral-700 dark:bg-white/[0.07] dark:text-neutral-200 ${focus}`}
             >
               {L.clearSearch ?? "Clear search"}
             </button>
@@ -961,7 +961,7 @@ export function DataTable<T extends { id: Id }>({
             <button
               type="button"
               onClick={() => setLimit((l) => l + pageSize)}
-              className={`h-9 rounded-xl bg-black/[0.05] px-3.5 text-[12.5px] font-medium text-neutral-700 transition-transform active:scale-[0.97] dark:bg-white/[0.07] dark:text-neutral-200 [@media(hover:hover)]:hover:bg-black/[0.08] dark:[@media(hover:hover)]:hover:bg-white/[0.11] ${focus}`}
+              className={`h-9 rounded-xl bg-black/[0.05] px-3.5 text-[12.5px] font-medium text-neutral-700 dark:bg-white/[0.07] dark:text-neutral-200 [@media(hover:hover)]:hover:bg-black/[0.08] dark:[@media(hover:hover)]:hover:bg-white/[0.11] ${focus}`}
             >
               {L.showMore
                 ? L.showMore(Math.min(pageSize, processed.length - limit))
@@ -1132,7 +1132,7 @@ export function DataTableDemo() {
             <button
               type="button"
               onClick={() => alert(`Exporting ${ids.length} products`)}
-              className={`h-9 rounded-xl bg-neutral-900 px-3.5 text-[12.5px] font-medium text-white transition-transform active:scale-[0.97] dark:bg-white dark:text-neutral-900 ${focus}`}
+              className={`h-9 rounded-xl bg-neutral-900 px-3.5 text-[12.5px] font-medium text-white dark:bg-white dark:text-neutral-900 ${focus}`}
             >
               Export
             </button>

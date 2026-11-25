@@ -94,7 +94,7 @@ export function BarChart({
 }: BarChartProps) {
   const reduce = useReducedMotion();
   const anim = animated && !reduce;
-  const [rootRef, width] = useElementWidth<HTMLDivElement>(640);
+  const [rootRef, width, measured] = useElementWidth<HTMLDivElement>(640);
   const [hidden, setHidden] = useState<string[]>([]);
   const [active, setActive] = useState<number | null>(null);
   const [entered, setEntered] = useState(!anim);
@@ -227,126 +227,131 @@ export function BarChart({
   return (
     <div ref={rootRef} className={cx("w-full", className)}>
       <div ref={wrapRef} className="relative" style={{ height }}>
-        <svg
-          width={width}
-          height={height}
-          role="img"
-          aria-label={
-            ariaLabel ??
-            `Bar chart of ${series.map((s) => s.label).join(", ")} across ${n} categories`
-          }
-          tabIndex={0}
-          onKeyDown={onKey}
-          onBlur={() => setActive(null)}
-          className="block touch-pan-y overflow-visible rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-neutral-400/60 dark:focus-visible:ring-white/30"
-        >
-          {/* grid + y labels */}
-          {ticks.map((_, t) => {
-            const gy = base - (t / 4) * ih;
-            return (
-              <g key={t}>
-                <line
-                  x1={M.left}
-                  x2={width - M.right}
-                  y1={gy}
-                  y2={gy}
-                  className={
-                    t === 0
-                      ? "stroke-black/15 dark:stroke-white/15"
-                      : "stroke-black/[0.06] dark:stroke-white/[0.07]"
-                  }
-                />
-                <motion.text
-                  key={tickText[t]}
-                  x={M.left - 8}
-                  y={gy}
-                  textAnchor="end"
-                  dominantBaseline="middle"
-                  className="fill-neutral-500 text-[11px] tabular-nums"
-                  initial={anim ? { opacity: 0 } : false}
-                  animate={{ opacity: 1 }}
-                  transition={{ duration: 0.25 }}
-                >
-                  {tickText[t]}
-                </motion.text>
-              </g>
-            );
-          })}
-
-          {/* hover band */}
-          <motion.rect
-            y={M.top}
-            height={ih}
-            width={stepX}
-            rx={8}
-            className="fill-black/[0.04] dark:fill-white/[0.05]"
-            initial={false}
-            animate={{ x: M.left + stepX * (active ?? 0), opacity: active === null ? 0 : 1 }}
-            transition={
-              reduce
-                ? { duration: 0 }
-                : { x: { type: "spring", duration: 0.3, bounce: 0.1 }, opacity: { duration: 0.15 } }
+        {measured && (
+          <svg
+            width={width}
+            height={height}
+            role="img"
+            aria-label={
+              ariaLabel ??
+              `Bar chart of ${series.map((s) => s.label).join(", ")} across ${n} categories`
             }
-          />
+            tabIndex={0}
+            onKeyDown={onKey}
+            onBlur={() => setActive(null)}
+            className="block touch-pan-y overflow-visible rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-neutral-400/60 dark:focus-visible:ring-white/30"
+          >
+            {/* grid + y labels */}
+            {ticks.map((_, t) => {
+              const gy = base - (t / 4) * ih;
+              return (
+                <g key={t}>
+                  <line
+                    x1={M.left}
+                    x2={width - M.right}
+                    y1={gy}
+                    y2={gy}
+                    className={
+                      t === 0
+                        ? "stroke-black/15 dark:stroke-white/15"
+                        : "stroke-black/[0.06] dark:stroke-white/[0.07]"
+                    }
+                  />
+                  <motion.text
+                    key={tickText[t]}
+                    x={M.left - 8}
+                    y={gy}
+                    textAnchor="end"
+                    dominantBaseline="middle"
+                    className="fill-neutral-500 text-[11px] tabular-nums"
+                    initial={anim ? { opacity: 0 } : false}
+                    animate={{ opacity: 1 }}
+                    transition={{ duration: 0.25 }}
+                  >
+                    {tickText[t]}
+                  </motion.text>
+                </g>
+              );
+            })}
 
-          {/* bars */}
-          {bars.map((group, i) => (
-            <g
-              key={i}
-              style={{
-                opacity: active === null || active === i ? 1 : 0.38,
-                transition: "opacity .2s",
-              }}
-            >
-              {group.map(({ s, si, d, opacity }) => (
-                <motion.path
-                  key={s.key}
-                  fill={colors[si]}
-                  initial={
-                    anim
-                      ? {
-                          d: barPath(M.left + stepX * i + stepX / 2 - barW / 2, base, barW, 0, 0),
-                          opacity: 0,
-                        }
-                      : false
-                  }
-                  animate={{ d, opacity }}
-                  transition={tr(i, si)}
-                />
-              ))}
-            </g>
-          ))}
+            {/* hover band */}
+            <motion.rect
+              y={M.top}
+              height={ih}
+              width={stepX}
+              rx={8}
+              className="fill-black/[0.04] dark:fill-white/[0.05]"
+              initial={false}
+              animate={{ x: M.left + stepX * (active ?? 0), opacity: active === null ? 0 : 1 }}
+              transition={
+                reduce
+                  ? { duration: 0 }
+                  : {
+                      x: { type: "spring", duration: 0.3, bounce: 0.1 },
+                      opacity: { duration: 0.15 },
+                    }
+              }
+            />
 
-          {/* x labels */}
-          {data.map((d, i) =>
-            i % labelEvery === 0 ? (
-              <text
+            {/* bars */}
+            {bars.map((group, i) => (
+              <g
                 key={i}
-                x={M.left + stepX * i + stepX / 2}
-                y={height - 8}
-                textAnchor="middle"
-                className={cx(
-                  "text-[11px]",
-                  active === i ? "fill-neutral-900 dark:fill-neutral-100" : "fill-neutral-500",
-                )}
+                style={{
+                  opacity: active === null || active === i ? 1 : 0.38,
+                  transition: "opacity .2s",
+                }}
               >
-                {d.label}
-              </text>
-            ) : null,
-          )}
+                {group.map(({ s, si, d, opacity }) => (
+                  <motion.path
+                    key={s.key}
+                    fill={colors[si]}
+                    initial={
+                      anim
+                        ? {
+                            d: barPath(M.left + stepX * i + stepX / 2 - barW / 2, base, barW, 0, 0),
+                            opacity: 0,
+                          }
+                        : false
+                    }
+                    animate={{ d, opacity }}
+                    transition={tr(i, si)}
+                  />
+                ))}
+              </g>
+            ))}
 
-          {/* pointer surface */}
-          <rect
-            x={M.left}
-            y={M.top}
-            width={iw}
-            height={ih}
-            fill="transparent"
-            onPointerMove={move}
-            onPointerDown={move}
-            onPointerLeave={(e) => e.pointerType === "mouse" && setActive(null)}
-          />
-        </svg>
+            {/* x labels */}
+            {data.map((d, i) =>
+              i % labelEvery === 0 ? (
+                <text
+                  key={i}
+                  x={M.left + stepX * i + stepX / 2}
+                  y={height - 8}
+                  textAnchor="middle"
+                  className={cx(
+                    "text-[11px]",
+                    active === i ? "fill-neutral-900 dark:fill-neutral-100" : "fill-neutral-500",
+                  )}
+                >
+                  {d.label}
+                </text>
+              ) : null,
+            )}
+
+            {/* pointer surface */}
+            <rect
+              x={M.left}
+              y={M.top}
+              width={iw}
+              height={ih}
+              fill="transparent"
+              onPointerMove={move}
+              onPointerDown={move}
+              onPointerLeave={(e) => e.pointerType === "mouse" && setActive(null)}
+            />
+          </svg>
+        )}
 
         <Tooltip
           pos={active === null ? null : { x: M.left + stepX * (active + 0.5), y: groupTop(active) }}

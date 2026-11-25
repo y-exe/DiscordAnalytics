@@ -114,7 +114,7 @@ export function ActivityHeatmap({
     () => new Intl.DateTimeFormat(locale, { month: "short", timeZone: "UTC" }),
     [locale],
   );
-  const [rootRef, width] = useElementWidth<HTMLDivElement>(720);
+  const [rootRef, width, measured] = useElementWidth<HTMLDivElement>(720);
   const [active, setActive] = useState<{ c: number; r: number } | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   useDismissOutside(
@@ -285,117 +285,119 @@ export function ActivityHeatmap({
       )}
 
       <div ref={wrapRef} className="relative" style={{ height: svgH }}>
-        <svg
-          width={width}
-          height={svgH}
-          role="img"
-          aria-label={ariaLabel ?? `Activity heatmap. ${summary}`}
-          tabIndex={0}
-          onKeyDown={onKey}
-          onBlur={() => setActive(null)}
-          className="block touch-pan-y overflow-visible rounded-md outline-none focus-visible:ring-2 focus-visible:ring-neutral-400/60 dark:focus-visible:ring-white/30"
-        >
-          {topLabels.map((l) => (
-            <text key={l.c} x={gx(l.c)} y={11} className="fill-neutral-500 text-[11px]">
-              {l.text}
-            </text>
-          ))}
-          {rowNames.map((l) => (
-            <text
-              key={l.r}
-              x={0}
-              y={gy(l.r) + ch / 2}
-              dominantBaseline="middle"
-              className="fill-neutral-500 text-[10.5px]"
-            >
-              {l.text}
-            </text>
-          ))}
+        {measured && (
+          <svg
+            width={width}
+            height={svgH}
+            role="img"
+            aria-label={ariaLabel ?? `Activity heatmap. ${summary}`}
+            tabIndex={0}
+            onKeyDown={onKey}
+            onBlur={() => setActive(null)}
+            className="block touch-pan-y overflow-visible rounded-md outline-none focus-visible:ring-2 focus-visible:ring-neutral-400/60 dark:focus-visible:ring-white/30"
+          >
+            {topLabels.map((l) => (
+              <text key={l.c} x={gx(l.c)} y={11} className="fill-neutral-500 text-[11px]">
+                {l.text}
+              </text>
+            ))}
+            {rowNames.map((l) => (
+              <text
+                key={l.r}
+                x={0}
+                y={gy(l.r) + ch / 2}
+                dominantBaseline="middle"
+                className="fill-neutral-500 text-[10.5px]"
+              >
+                {l.text}
+              </text>
+            ))}
 
-          {/* crosshair bands (hours mode) */}
-          {hours && (
-            <>
-              <motion.rect
-                x={LW - 2}
-                width={24 * (cwEff + gap)}
-                height={ch + 4}
-                rx={5}
-                className="fill-black/[0.035] dark:fill-white/[0.04]"
-                initial={false}
-                animate={{ y: gy(active?.r ?? 0) - 2, opacity: active ? 1 : 0 }}
-                transition={reduce ? { duration: 0 } : { duration: 0.15 }}
-              />
-              <motion.rect
-                y={TOP - 2}
-                width={cwEff + 4}
-                height={7 * (ch + gap)}
-                rx={5}
-                className="fill-black/[0.035] dark:fill-white/[0.04]"
-                initial={false}
-                animate={{ x: gx(active?.c ?? 0) - 2, opacity: active ? 1 : 0 }}
-                transition={reduce ? { duration: 0 } : { duration: 0.15 }}
-              />
-            </>
-          )}
+            {/* crosshair bands (hours mode) */}
+            {hours && (
+              <>
+                <motion.rect
+                  x={LW - 2}
+                  width={24 * (cwEff + gap)}
+                  height={ch + 4}
+                  rx={5}
+                  className="fill-black/[0.035] dark:fill-white/[0.04]"
+                  initial={false}
+                  animate={{ y: gy(active?.r ?? 0) - 2, opacity: active ? 1 : 0 }}
+                  transition={reduce ? { duration: 0 } : { duration: 0.15 }}
+                />
+                <motion.rect
+                  y={TOP - 2}
+                  width={cwEff + 4}
+                  height={7 * (ch + gap)}
+                  rx={5}
+                  className="fill-black/[0.035] dark:fill-white/[0.04]"
+                  initial={false}
+                  animate={{ x: gx(active?.c ?? 0) - 2, opacity: active ? 1 : 0 }}
+                  transition={reduce ? { duration: 0 } : { duration: 0.15 }}
+                />
+              </>
+            )}
 
-          {model.cells.map((x) => {
-            const l = model.level(x.v);
-            return (
-              <rect
-                key={`${x.c}:${x.r}`}
-                x={gx(x.c)}
-                y={gy(x.r)}
-                width={cwEff}
-                height={ch}
-                rx={Math.min(3, cwEff / 4)}
-                className={cx(
-                  anim && "cj-cell",
-                  l === 0 && "fill-black/[0.05] dark:fill-white/[0.06]",
-                )}
-                style={
-                  {
-                    ...lvlFill(l),
-                    ["--d" as string]: anim
-                      ? `${(x.c * 0.012 + x.r * 0.02).toFixed(3)}s`
-                      : undefined,
-                  } as CSSProperties
-                }
-              />
-            );
-          })}
+            {model.cells.map((x) => {
+              const l = model.level(x.v);
+              return (
+                <rect
+                  key={`${x.c}:${x.r}`}
+                  x={gx(x.c)}
+                  y={gy(x.r)}
+                  width={cwEff}
+                  height={ch}
+                  rx={Math.min(3, cwEff / 4)}
+                  className={cx(
+                    anim && "cj-cell",
+                    l === 0 && "fill-black/[0.05] dark:fill-white/[0.06]",
+                  )}
+                  style={
+                    {
+                      ...lvlFill(l),
+                      ["--d" as string]: anim
+                        ? `${(x.c * 0.012 + x.r * 0.02).toFixed(3)}s`
+                        : undefined,
+                    } as CSSProperties
+                  }
+                />
+              );
+            })}
 
-          {/* active ring */}
-          <motion.rect
-            width={cwEff + 2}
-            height={ch + 2}
-            rx={Math.min(4, cwEff / 3)}
-            fill="none"
-            strokeWidth={1.5}
-            className="stroke-neutral-900 dark:stroke-white"
-            initial={false}
-            animate={{
-              x: gx(active?.c ?? 0) - 1,
-              y: gy(active?.r ?? 0) - 1,
-              opacity: active ? 1 : 0,
-            }}
-            transition={
-              reduce
-                ? { duration: 0 }
-                : { x: { duration: 0.12 }, y: { duration: 0.12 }, opacity: { duration: 0.12 } }
-            }
-          />
+            {/* active ring */}
+            <motion.rect
+              width={cwEff + 2}
+              height={ch + 2}
+              rx={Math.min(4, cwEff / 3)}
+              fill="none"
+              strokeWidth={1.5}
+              className="stroke-neutral-900 dark:stroke-white"
+              initial={false}
+              animate={{
+                x: gx(active?.c ?? 0) - 1,
+                y: gy(active?.r ?? 0) - 1,
+                opacity: active ? 1 : 0,
+              }}
+              transition={
+                reduce
+                  ? { duration: 0 }
+                  : { x: { duration: 0.12 }, y: { duration: 0.12 }, opacity: { duration: 0.12 } }
+              }
+            />
 
-          <rect
-            x={LW}
-            y={TOP}
-            width={cols * (cwEff + gap)}
-            height={7 * (ch + gap)}
-            fill="transparent"
-            onPointerMove={locate}
-            onPointerDown={locate}
-            onPointerLeave={(e) => e.pointerType === "mouse" && setActive(null)}
-          />
-        </svg>
+            <rect
+              x={LW}
+              y={TOP}
+              width={cols * (cwEff + gap)}
+              height={7 * (ch + gap)}
+              fill="transparent"
+              onPointerMove={locate}
+              onPointerDown={locate}
+              onPointerLeave={(e) => e.pointerType === "mouse" && setActive(null)}
+            />
+          </svg>
+        )}
 
         <Tooltip
           pos={active ? { x: gx(active.c) + cwEff / 2, y: gy(active.r) } : null}

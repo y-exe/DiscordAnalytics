@@ -29,17 +29,19 @@ const nextConfig: NextConfig = {
       {
         source: "/:path*",
         headers: [
+          // CSP・HSTSは本番ではmiddlewareでnonce付きCSPを発行する (next.configの
+          // headers()は静的にしか出せずnonceをレスポンスごとに変えられないため)。
+          // ここでは開発環境のCSPのみを担う。
           ...(process.env.NODE_ENV === "production"
-            ? [
-                { key: "Strict-Transport-Security", value: "max-age=31536000" },
+            ? []
+            : [
                 {
-                  // 開発環境はHMR/評価実行の要件が異なるため本番のみ適用する。
-                  // Next.jsのハイドレーション用インラインスクリプトとスタイルに
-                  // 'unsafe-inline' が必要。フォントはGoogle Fonts、画像はDiscord CDN。
+                  // 開発環境はHMR/評価実行 (React devtoolsのeval) /インライン要件が
+                  // 本番と異なるため unsafe-eval / unsafe-inline を許可する。
                   key: "Content-Security-Policy",
                   value: [
                     "default-src 'self'",
-                    "script-src 'self' 'unsafe-inline'",
+                    "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
                     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
                     "font-src 'self' https://fonts.gstatic.com data:",
                     "img-src 'self' data: https://cdn.discordapp.com",
@@ -51,8 +53,7 @@ const nextConfig: NextConfig = {
                     "form-action 'self'",
                   ].join("; "),
                 },
-              ]
-            : []),
+              ]),
           { key: "X-Content-Type-Options", value: "nosniff" },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
           { key: "X-Frame-Options", value: "DENY" },
@@ -80,9 +81,9 @@ const nextConfig: NextConfig = {
       afterFiles: [
         // 同一オリジン形式の /api/* も移行期のWorkersで動くようにする (プレフィックスは剥がす)
         {
-        source: "/api/:path*",
-        destination: `${process.env.NEXT_PUBLIC_API_URL ?? "https://api.ymkw.top"}/:path*`,
-      },
+          source: "/api/:path*",
+          destination: `${process.env.NEXT_PUBLIC_API_URL ?? "https://api.ymkw.top"}/:path*`,
+        },
       ],
       fallback: legacySources.map((source) => ({
         source,

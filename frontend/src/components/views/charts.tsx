@@ -112,11 +112,14 @@ export function ChannelShareDonut({
   channels,
   max = 6,
   showLegend = true,
+  size = 220,
 }: {
   channels: { name: string; value: number }[];
   max?: number;
   /** ドーナツ下の凡例リスト。カード本体では false にしてダイアログでのみ表示する */
   showLegend?: boolean;
+  /** ドーナツの直径。カード幅が狭いときは小さくする */
+  size?: number;
 }) {
   const data = channels.slice(0, max).map((c) => ({ label: `#${c.name}`, value: c.value }));
   if (data.length === 0) {
@@ -126,7 +129,7 @@ export function ChannelShareDonut({
     <div className={showLegend ? "" : "flex justify-center"}>
       <DonutChart
         data={data}
-        size={220}
+        size={size}
         thickness={18}
         centerLabel="合計"
         formatValue={(n) => `${jaNum.format(Math.round(n))}件`}

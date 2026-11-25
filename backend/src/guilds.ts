@@ -8,8 +8,12 @@ export interface GuildDisplayConfig {
   /** サイドバーに表示するチャンネル。空配列なら全チャンネルを表示する */
   whitelistChannelIds: string[];
   privateChatChannelId: string;
-  /** このカテゴリ配下のチャンネルを「プラチャ」として集約する。空配列なら集約しない */
+  /** このカテゴリ配下のチャンネルを「その他」(名前変更可) として集約する。空配列なら集約しない */
   privateChatCategoryIds: string[];
+  /** 集約チャンネルの表示名 (「プラチャ」等)。未設定なら「その他」 */
+  privateChatLabel: string;
+  /** Webサイトから隠すチャンネル (ホワイトリスト未設定時に有効) */
+  hiddenChannelIds: string[];
   /** 一覧の末尾に寄せて表示するカテゴリ */
   bottomChannelCategoryIds: string[];
 }
@@ -52,6 +56,8 @@ function parseDisplayConfig(raw: unknown): GuildDisplayConfig {
     whitelistChannelIds: [],
     privateChatChannelId: PRIVATE_CHAT_CHANNEL_SENTINEL,
     privateChatCategoryIds: [],
+    privateChatLabel: "その他",
+    hiddenChannelIds: [],
     bottomChannelCategoryIds: [],
   };
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return fallback;
@@ -60,6 +66,11 @@ function parseDisplayConfig(raw: unknown): GuildDisplayConfig {
     whitelistChannelIds: parseIdArray(obj.whitelistChannelIds),
     privateChatChannelId: PRIVATE_CHAT_CHANNEL_SENTINEL,
     privateChatCategoryIds: parseIdArray(obj.privateChatCategoryIds),
+    privateChatLabel:
+      typeof obj.privateChatLabel === "string" && obj.privateChatLabel.trim()
+        ? obj.privateChatLabel.trim()
+        : "その他",
+    hiddenChannelIds: parseIdArray(obj.hiddenChannelIds),
     bottomChannelCategoryIds: parseIdArray(obj.bottomChannelCategoryIds),
   };
 }

@@ -23,7 +23,7 @@ export interface ReorderableItem {
 export default function Reorderable({
   storageKey,
   items,
-  className = "grid grid-flow-dense gap-4 md:grid-cols-2 xl:grid-cols-4",
+  className = "grid grid-cols-1 grid-flow-dense gap-4 md:grid-cols-2 xl:grid-cols-4",
   resetToken = 0,
   replayKey = "",
 }: {
@@ -139,6 +139,17 @@ export default function Reorderable({
               if ((e.target as HTMLElement).closest("a,button")) return;
               setOpenId(item.id);
             }}
+            onKeyDown={(e) => {
+              if (!item.dialog) return;
+              if ((e.target as HTMLElement).closest("a,button")) return;
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                setOpenId(item.id);
+              }
+            }}
+            role={item.dialog ? "button" : undefined}
+            tabIndex={item.dialog ? 0 : undefined}
+            aria-haspopup={item.dialog ? "dialog" : undefined}
             className={`group/reorder relative h-full ${item.className ?? ""} ${item.dialog ? "cursor-pointer" : ""} ${draggingId === item.id ? "z-20 opacity-50" : ""}`}
           >
             <button

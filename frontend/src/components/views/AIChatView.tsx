@@ -21,31 +21,27 @@ import { API_URL, fetchAPI } from "@/lib/api";
 import { getLoggedInUser } from "@/components/shell/UserArea";
 import { AIChatEvent, AIChatHttpError, streamAIChat } from "@/lib/aiChat";
 import AiMarkdown, { type AiMentionUser } from "./AiMarkdown";
+import {
+  deleteThread as deleteStoredThread,
+  getThread,
+  listThreads,
+  saveThread,
+  type StoredThread,
+  type ToolRun,
+} from "@/lib/chatStore";
+
+export type { ToolRun };
 
 export interface AIChatGuild {
   iconUrl: string | null;
 }
 
-interface ToolRun {
-  name: string;
-  summary: string;
-  /** ツールが取得した実際のデータ (展開表示用) */
-  output?: string;
-}
-
 interface ChatMessageState {
   role: "user" | "assistant";
   content: string;
-  /** userメッセージのai_messages.id (編集再送信に使う) */
-  id?: number;
   toolRuns?: ToolRun[];
   streaming?: boolean;
   failed?: boolean;
-}
-
-interface ThreadSummary {
-  id: string;
-  title: string;
 }
 
 const SUGGESTIONS = [
@@ -330,9 +326,15 @@ function ConfirmDialog({
   );
 }
 
-export default function AIChatView({ guildIcon = null }: { guildIcon?: string | null }) {
+export default function AIChatView({
+  guildId,
+  guildIcon = null,
+}: {
+  guildId: string;
+  guildIcon?: string | null;
+}) {
   const [phase, setPhase] = useState<"checking" | "gate" | "unavailable" | "ready">("checking");
-  const [threads, setThreads] = useState<ThreadSummary[]>([]);
+  const [threads, setThreads] = useState<StoredThread[]>([]);
   const [threadId, setThreadId] = useState<string | null>(null);
   const [threadTitle, setThreadTitle] = useState("");
   const [messages, setMessages] = useState<ChatMessageState[]>([]);
@@ -345,7 +347,6 @@ export default function AIChatView({ guildIcon = null }: { guildIcon?: string | 
   // 再生成は直前の会話を削り直すため確認する
   const [regenTarget, setRegenTarget] = useState<{
     text: string;
-    editOf?: number;
     replaceFrom: number;
   } | null>(null);
   // 一番下までスクロールしているか (外れているときは↓ボタンを出す)
@@ -353,6 +354,8 @@ export default function AIChatView({ guildIcon = null }: { guildIcon?: string | 
   const abortRef = useRef<AbortController | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const followUpRef = useRef<HTMLDivElement>(null);
+  // 生成完了時のlocalStorage保存に使う (stateと同じ内容を常に参照できるように)
+  const messagesRef = useRef<ChatMessageState[]>([]);
   // ストリーミング差分のフラッシュ (React再描画を50ms間隔に間引いて滑らかに表示)
   const pendingText = useRef("");
   const flushTimer = useRef<number | null>(null);
@@ -418,13 +421,13 @@ export default function AIChatView({ guildIcon = null }: { guildIcon?: string | 
     return () => clearTimeout(timer);
   }, [messages, mentionUsers]);
 
+  /** AI機能の状態確認 (/ai/status) と履歴の読み出し */
   const loadThreads = useCallback(async (): Promise<boolean> => {
+    setThreads(listThreads(guildId));
     try {
-      // 503 (AI無効) 等も状態判定に使うためfetchAPI (非okでthrow) ではなく素のfetchを使う
-      const res = await fetch(`${API_URL}/ai/threads`, { credentials: "include" });
+      // 503 (AI無効) / 403 (ゲート) を状態判定に使うため素のfetchを使う
+      const res = await fetch(`${API_URL}/ai/status`, { credentials: "include" });
       if (res.ok) {
-        const body = (await res.json()) as { threads: ThreadSummary[] };
-        setThreads(body.threads ?? []);
         setPhase("ready");
         return true;
       }
@@ -435,7 +438,7 @@ export default function AIChatView({ guildIcon = null }: { guildIcon?: string | 
       setPhase("gate");
     }
     return false;
-  }, []);
+  }, [guildId]);
 
   useEffect(() => {
     void loadThreads();
@@ -443,6 +446,7 @@ export default function AIChatView({ guildIcon = null }: { guildIcon?: string | 
 
   // ストリーミング中・メッセージ追加時に最下部 (入力欄まで) へ追従
   useEffect(() => {
+    messagesRef.current = messages;
     window.scrollTo({ top: document.documentElement.scrollHeight, behavior: "smooth" });
   }, [messages]);
 
@@ -464,33 +468,19 @@ export default function AIChatView({ guildIcon = null }: { guildIcon?: string | 
     };
   }, []);
 
-  const openThread = async (id: string) => {
+  const openThread = (id: string) => {
     if (busy) return;
-    try {
-      const res = await fetchAPI(`/ai/threads/${id}`, { retries: 0, quiet: true });
-      if (!res.ok) return;
-      const body = (await res.json()) as {
-        thread: ThreadSummary;
-        messages: Array<{
-          id: number;
-          role: string;
-          content: string;
-          tool_runs: Array<{ name: string; summary: string; output?: string }> | null;
-        }>;
-      };
-      setThreadId(body.thread.id);
-      setThreadTitle(body.thread.title);
-      setMessages(
-        body.messages.map((m) => ({
-          role: m.role as "user" | "assistant",
-          content: m.content,
-          id: m.id,
-          toolRuns: m.tool_runs ?? [],
-        })),
-      );
-    } catch {
-      // 読込失敗時は何もしない
-    }
+    const thread = getThread(guildId, id);
+    if (!thread) return;
+    setThreadId(thread.id);
+    setThreadTitle(thread.title);
+    setMessages(
+      thread.messages.map((m) => ({
+        role: m.role,
+        content: m.content,
+        toolRuns: m.toolRuns ?? [],
+      })),
+    );
   };
 
   const newThread = () => {
@@ -502,37 +492,50 @@ export default function AIChatView({ guildIcon = null }: { guildIcon?: string | 
     setEditingIdx(null);
   };
 
-  const deleteThread = async (id: string) => {
-    try {
-      await fetchAPI(`/ai/threads/${id}`, { method: "DELETE", retries: 0, quiet: true });
-    } catch {
-      // 削除失敗は無視
-    }
+  const deleteThread = (id: string) => {
+    deleteStoredThread(guildId, id);
+    setThreads(listThreads(guildId));
     if (threadId === id) newThread();
-    void loadThreads();
   };
 
-  const send = async (text: string, opts?: { editOf?: number; replaceFrom?: number }) => {
+  const send = async (text: string, opts?: { replaceFrom?: number }) => {
     if (!text || busy) return;
     setInput("");
     setEditingIdx(null);
-    setMessages((prev) =>
-      opts?.replaceFrom !== undefined ? prev.slice(0, opts.replaceFrom) : prev,
-    );
-    setMessages((prev) => [...prev, { role: "user", content: text }]);
-    setMessages((prev) => [
-      ...prev,
-      { role: "assistant", content: "", toolRuns: [], streaming: true },
-    ]);
+    // 編集再送信・再生成では指定位置以降を削り直す (履歴はクライアント保持なので
+    // サーバーへの削除依頼は不要。残った履歴をそのまま送る)
+    const baseMessages =
+      opts?.replaceFrom !== undefined
+        ? messagesRef.current.slice(0, opts.replaceFrom)
+        : messagesRef.current;
+    const updated = [
+      ...baseMessages,
+      { role: "user" as const, content: text },
+      { role: "assistant" as const, content: "", toolRuns: [], streaming: true },
+    ];
+    setMessages(updated);
     setBusy(true);
     const controller = new AbortController();
     abortRef.current = controller;
 
+    // 新規チャットならUUIDを振る (タイトルは最初の質問から)
+    let currentThreadId = threadId;
+    if (!currentThreadId) {
+      currentThreadId =
+        globalThis.crypto?.randomUUID?.() ??
+        `t-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      setThreadId(currentThreadId);
+    }
+    const title = text.replace(/\s+/g, " ").trim().slice(0, 30) || "新しいチャット";
+
     try {
+      // 文脈には確定済みのやり取りだけを渡す (最後のstreamingプレースホルダを除く)
+      const history = baseMessages
+        .filter((m) => !m.streaming)
+        .map((m) => ({ role: m.role, content: m.content }));
       await streamAIChat({
         message: text,
-        threadId: threadId ?? undefined,
-        editOf: opts?.editOf,
+        history,
         signal: controller.signal,
         onEvent: handleEvent,
       });
@@ -558,22 +561,23 @@ export default function AIChatView({ guildIcon = null }: { guildIcon?: string | 
       stopFlush();
       setBusy(false);
       abortRef.current = null;
-      void loadThreads();
+      // 会話をlocalStorageに保存 (サーバーには保存しない)
+      saveThread(guildId, {
+        id: currentThreadId,
+        title,
+        createdAt: getThread(guildId, currentThreadId)?.createdAt ?? Date.now(),
+        updatedAt: Date.now(),
+        messages: messagesRef.current.map((m) => ({
+          role: m.role,
+          content: m.content,
+          ...(m.toolRuns?.length ? { toolRuns: m.toolRuns } : {}),
+        })),
+      });
+      setThreads(listThreads(guildId));
     }
 
     function handleEvent(event: AIChatEvent) {
-      if (event.type === "start") {
-        setThreadId(String(event.threadId));
-        setThreadTitle(String(event.title ?? ""));
-        const userMessageId = Number(event.userMessageId ?? 0);
-        if (userMessageId > 0) {
-          setMessages((prev) => {
-            const lastUser = [...prev].reverse().find((m) => m.role === "user");
-            if (!lastUser) return prev;
-            return prev.map((m) => (m === lastUser ? { ...m, id: userMessageId } : m));
-          });
-        }
-      } else if (event.type === "delta") {
+      if (event.type === "delta") {
         if (!event.text) return;
         pendingText.current += event.text;
         startFlush();
@@ -625,10 +629,8 @@ export default function AIChatView({ guildIcon = null }: { guildIcon?: string | 
       }
     }
     if (userIdx === -1) return;
-    const userMessage = messages[userIdx];
     setRegenTarget({
-      text: userMessage.content,
-      editOf: userMessage.id,
+      text: messages[userIdx].content,
       replaceFrom: userIdx,
     });
   };
@@ -755,7 +757,7 @@ export default function AIChatView({ guildIcon = null }: { guildIcon?: string | 
                   <button
                     key={thread.id}
                     type="button"
-                    onClick={() => void openThread(thread.id)}
+                    onClick={() => openThread(thread.id)}
                     className="max-w-xs truncate rounded-full bg-muted px-3.5 py-1.5 text-xs font-bold text-muted-foreground transition-colors hover:text-sidebar-text-strong"
                     title={thread.title}
                   >
@@ -781,10 +783,7 @@ export default function AIChatView({ guildIcon = null }: { guildIcon?: string | 
                           if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
                             e.preventDefault();
                             if (editDraft.trim())
-                              void send(editDraft.trim(), {
-                                editOf: message.id,
-                                replaceFrom: index,
-                              });
+                              void send(editDraft.trim(), { replaceFrom: index });
                           }
                         }}
                         rows={3}
@@ -802,9 +801,7 @@ export default function AIChatView({ guildIcon = null }: { guildIcon?: string | 
                         <button
                           type="button"
                           disabled={!editDraft.trim() || busy}
-                          onClick={() =>
-                            void send(editDraft.trim(), { editOf: message.id, replaceFrom: index })
-                          }
+                          onClick={() => void send(editDraft.trim(), { replaceFrom: index })}
                           className="flex h-8 items-center rounded-full bg-foreground px-4 text-xs font-black text-background transition-opacity hover:opacity-90 disabled:opacity-30"
                         >
                           送り直す
@@ -953,7 +950,7 @@ export default function AIChatView({ guildIcon = null }: { guildIcon?: string | 
         onClose={() => setDeleteConfirmOpen(false)}
         onConfirm={() => {
           setDeleteConfirmOpen(false);
-          if (threadId) void deleteThread(threadId);
+          if (threadId) deleteThread(threadId);
         }}
       />
       <ConfirmDialog
@@ -965,8 +962,7 @@ export default function AIChatView({ guildIcon = null }: { guildIcon?: string | 
         onConfirm={() => {
           const target = regenTarget;
           setRegenTarget(null);
-          if (target)
-            void send(target.text, { editOf: target.editOf, replaceFrom: target.replaceFrom });
+          if (target) void send(target.text, { replaceFrom: target.replaceFrom });
         }}
       />
     </div>

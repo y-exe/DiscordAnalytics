@@ -1,11 +1,7 @@
 import type { Metadata, Viewport } from "next";
+import ButtonRipple from "@/components/shell/ButtonRipple";
 import ThemeProvider from "@/components/ThemeProvider";
-import {
-  DEFAULT_SITE_ORIGIN,
-  getGuildBaseUrl,
-  getGuildContext,
-  sizedIconPng,
-} from "@/lib/guild-context";
+import { DEFAULT_SITE_ORIGIN, getGuildBaseUrl, getGuildContext } from "@/lib/guild-context";
 import { serializeJsonLd } from "@/lib/seo";
 import "../styles/global.css";
 
@@ -46,8 +42,8 @@ export const viewport: Viewport = {
 export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   const guild = await getGuildContext();
   // ファビコンはギルドアイコン。未設定なら同梱の既定アイコンにフォールバック
-  const favicon = sizedIconPng(guild.iconUrl, 128);
-  const appleIcon = sizedIconPng(guild.iconUrl, 180);
+  const favicon = guild.iconUrl ? "/guild-icon?s=128" : null;
+  const appleIcon = guild.iconUrl ? "/guild-icon?s=180" : null;
   const baseUrl = (await getGuildBaseUrl()) ?? DEFAULT_SITE_ORIGIN;
   const siteName = guild.name ? `${guild.name} ダッシュボード` : "Discord Analytics";
 
@@ -86,6 +82,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
         />
       </head>
       <body className="bg-background text-foreground font-sans min-h-screen">
+        <ButtonRipple />
         <ThemeProvider>{children}</ThemeProvider>
       </body>
     </html>

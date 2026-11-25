@@ -28,6 +28,8 @@ export default function StatCard({
   loading = false,
   dialogStats,
   dialogExtra,
+  /** ダイアログを開いた時に呼ばれる (ポップアップ専用データの遅延取得に使う) */
+  onDialogOpen,
   formatValue = (v: number) => v.toLocaleString("ja-JP"),
 }: {
   title: string;
@@ -45,6 +47,8 @@ export default function StatCard({
   loading?: boolean;
   /** 拡大ダイアログの統計グリッド (curated)。未指定ならseriesから自動生成 */
   dialogStats?: DialogStatItem[];
+  /** ダイアログを開いた時に呼ばれる */
+  onDialogOpen?: () => void;
   /** 拡大ダイアログのグラフ下に追加するセクション */
   dialogExtra?: ReactNode;
   formatValue?: (value: number) => string;
@@ -103,11 +107,13 @@ export default function StatCard({
       onClick={(e) => {
         if ((e.target as HTMLElement).closest("a,button")) return;
         setExpanded(true);
+        onDialogOpen?.();
       }}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
           setExpanded(true);
+          onDialogOpen?.();
         }
       }}
     >

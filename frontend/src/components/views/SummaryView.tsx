@@ -131,18 +131,38 @@ function shortDate(date: string): string {
   return `${Number(parts[1])}/${Number(parts[2])}`;
 }
 
+/** サーバーで事前取得済みのデータ区分 (初回HTMLに同梱される。SSR用) */
+export interface InitialParts {
+  history?: unknown;
+  analysis?: unknown;
+}
+
 export default function SummaryView({
   year,
   month,
   isAll,
+  initialParts,
 }: {
   year: number | null;
   month: number | null;
   isAll: boolean;
+  /** 初回HTMLに同梱されたデータ (KPI・推移カードをSSR表示する)。期間切替後は無視される */
+  initialParts?: InitialParts;
 }) {
+  /** この期間でSSR事前取得済みの区分 (クライアントでの再取得をスキップする) */
+  const prefilledRef = useRef<Set<PartKey>>(new Set());
   /** データ区分ごとに到着したレスポンス (カード単位の段階表示用) */
-  const [parts, setParts] = useState<Partial<Record<PartKey, unknown>>>({});
+  const [parts, setParts] = useState<Partial<Record<PartKey, unknown>>>(
+    initialParts
+      ? {
+          ...(initialParts.history !== undefined ? { history: initialParts.history } : {}),
+          ...(initialParts.analysis !== undefined ? { analysis: initialParts.analysis } : {}),
+        }
+      : {},
+  );
   const [failedParts, setFailedParts] = useState<Partial<Record<PartKey, boolean>>>({});
+  /** ポップアップの詳細データ (extras) を取得するフラグ。カードが開かれた時点で立てる */
+  const [extrasWanted, setExtrasWanted] = useState(false);
   /** 期間切替中 (既存データを薄めて表示し、取得できたら差し替える) */
   const [pending, setPending] = useState(false);
   // 変えるとカードの並び順をデフォルトに戻す (ReorderableのresetToken)
@@ -227,6 +247,37 @@ export default function SummaryView({
     };
     if (prev) paths.prev = `/stats/analysis/${prev.year}/${prev.month}?extras=0`;
 
+    // 期間が変わったら前期間のデータを残さない (違う月の値が薄まった状態で
+    // 見えて「前期間比3611%」のような誤ったバッジが出るのを防ぐ)。
+    // SSR事前取得分だけはそのまま残す。
+    setExtrasWanted(false);
+    setParts((p) => {
+      const kept: Partial<Record<PartKey, unknown>> = {};
+      for (const key of prefillKeys) kept[key] = p[key];
+      return kept;
+    });
+    setFailedParts({});
+
+    // SSR事前取得済み区分の反映: この期間のinitialPartsがまだ反映されていなければ埋める。
+    // クライアントでの再取得はスキップする (サーバーのデータはリクエスト時点で最新)。
+    prefilledRef.current = new Set();
+    const prefillKeys: PartKey[] = [];
+    if (initialParts) {
+      const initial = initialParts as Record<PartKey, unknown>;
+      for (const key of ["history", "analysis"] as PartKey[]) {
+        if (initial[key] !== undefined) prefillKeys.push(key);
+      }
+    }
+    if (prefillKeys.length > 0) {
+      prefilledRef.current = new Set(prefillKeys);
+      const initial = initialParts as Record<PartKey, unknown>;
+      setParts((p) => {
+        const next = { ...p };
+        for (const key of prefillKeys) next[key] = initial[key];
+        return next;
+      });
+    }
+
     // 保存したカード順に沿って、表示に必要なデータから優先的にリクエストする
     // (上にあるカードほど早くデータを受け取り、早く表示される)
     const cardOrder = savedCardOrder(
@@ -239,9 +290,9 @@ export default function SummaryView({
         if (!order.includes(key)) order.push(key);
       }
     }
-    // 前期間比 (deltaバッジ) とポップアップ用おまけは装飾的なので最後に回す
+    // 前期間比 (deltaバッジ) は見えているカードに必要なので取得する。
+    // ポップアップ用の extras はカード開いた時に取得する (初回画面では通信の無駄)
     if (paths.prev) order.push("prev");
-    order.push("extras");
 
     // 期間が変わったらめくり状態をリセットする
     resetReveal();
@@ -253,6 +304,10 @@ export default function SummaryView({
       if (remaining <= 0 && !cancelled) setPending(false);
     };
     const load = async (key: PartKey) => {
+      if (prefilledRef.current.has(key)) {
+        settle();
+        return;
+      }
       const path = paths[key];
       if (!path) {
         settle();
@@ -289,6 +344,32 @@ export default function SummaryView({
     };
   }, [year, month, isAll]);
 
+  // ポップアップ用の extras はカードが開かれた時にだけ取得する (初回描画には不要)。
+  // 失敗しても致命的ではないため静かに諦める (ポップアップの該当項目が「—」になる)。
+  useEffect(() => {
+    if (!extrasWanted || parts.extras !== undefined || failedParts.extras === true) return;
+    let cancelled = false;
+    const base = isAll ? "/total" : `/${year}/${month}`;
+    fetchAPI(`/stats/analysis_extras${base}`, { quiet: true })
+      .then((res) => {
+        if (cancelled) return;
+        if (res.ok) {
+          void res.json().then((body) => {
+            if (!cancelled) setParts((p) => ({ ...p, extras: body }));
+          });
+        } else {
+          setFailedParts((f) => ({ ...f, extras: true }));
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setFailedParts((f) => ({ ...f, extras: true }));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [extrasWanted, parts.extras, failedParts.extras, year, month, isAll]);
+  const requestExtras = useCallback(() => setExtrasWanted(true), []);
+
   // データ取得後、前後の月のデータを事前取得しておく (期間切替を高速化)
   useEffect(() => {
     const bases: string[] = [];
@@ -312,7 +393,7 @@ export default function SummaryView({
       for (const base of bases) {
         prefetchAPI(`/stats/history${base}`);
         prefetchAPI(`/stats/analysis${base}?extras=0`);
-        prefetchAPI(`/stats/analysis_extras${base}`);
+        // analysis_extras はポップアップを開いた時に取得するのでここでは不要
         prefetchAPI(`/stats/heatmap${base}`);
         prefetchAPI(`/stats/channels_distribution${base}`);
         prefetchAPI(`/ranking/monthly${base}`);
@@ -478,11 +559,8 @@ export default function SummaryView({
         </div>
       )}
 
-      <div
-        className={`transition-opacity duration-200 ${
-          pending ? "pointer-events-none opacity-40" : "opacity-100"
-        }`}
-      >
+      {/* ポップアップ用データの取得中でも操作は妨げない (薄める/ロックしない) */}
+      <div className="transition-opacity duration-200 opacity-100">
         <Reorderable
           replayKey={period.key}
           resetToken={orderResetToken}
@@ -502,6 +580,7 @@ export default function SummaryView({
                     value: p.total,
                   }))}
                   loading={!ready("kpi-total")}
+                  onDialogOpen={requestExtras}
                   dialogStats={dialogs?.total.stats}
                   dialogExtra={dialogs?.total.extra}
                 />
@@ -525,6 +604,7 @@ export default function SummaryView({
                       : undefined
                   }
                   loading={!ready("kpi-users")}
+                  onDialogOpen={requestExtras}
                   dialogStats={dialogs?.users.stats}
                   dialogExtra={dialogs?.users.extra}
                 />
@@ -548,6 +628,7 @@ export default function SummaryView({
                       : undefined
                   }
                   loading={!ready("kpi-chars")}
+                  onDialogOpen={requestExtras}
                   dialogStats={dialogs?.chars.stats}
                   dialogExtra={dialogs?.chars.extra}
                 />
@@ -562,10 +643,13 @@ export default function SummaryView({
                   unit="件"
                   delta={avgDelta}
                   chartType="bar"
-                  series={chart
-                    .slice(-14)
-                    .map((p) => ({ label: shortDate(p.date), value: p.total }))}
+                  series={chart.slice(-14).map((p) => ({
+                    label: shortDate(p.date),
+                    date: Date.parse(p.date),
+                    value: p.total,
+                  }))}
                   loading={!ready("kpi-avg-day")}
+                  onDialogOpen={requestExtras}
                   dialogStats={dialogs?.avgDay.stats}
                   dialogExtra={dialogs?.avgDay.extra}
                 />
@@ -589,6 +673,7 @@ export default function SummaryView({
                       : undefined
                   }
                   loading={!ready("kpi-avg-chars")}
+                  onDialogOpen={requestExtras}
                   dialogStats={dialogs?.avgChars.stats}
                   dialogExtra={dialogs?.avgChars.extra}
                 />
@@ -606,6 +691,7 @@ export default function SummaryView({
                   chartType="bar"
                   formatValue={(v) => v.toLocaleString("ja-JP")}
                   loading={!ready("kpi-peak")}
+                  onDialogOpen={requestExtras}
                   dialogStats={dialogs?.peak.stats}
                   dialogExtra={dialogs?.peak.extra}
                 />
@@ -621,6 +707,7 @@ export default function SummaryView({
                     busiestChannel ? `${busiestChannel.value.toLocaleString("ja-JP")}件` : undefined
                   }
                   loading={!ready("kpi-channel")}
+                  onDialogOpen={requestExtras}
                   dialogStats={dialogs?.channel.stats}
                 />
               ),
@@ -633,6 +720,7 @@ export default function SummaryView({
                   value={activeDays > 0 ? activeDays : "—"}
                   unit={activeDays > 0 ? "日" : undefined}
                   loading={!ready("kpi-active-days")}
+                  onDialogOpen={requestExtras}
                   dialogStats={dialogs?.activeDays.stats}
                   dialogExtra={dialogs?.activeDays.extra}
                 />
@@ -694,7 +782,7 @@ export default function SummaryView({
                   </div>
                   {dialogs?.trend.extra}
                   {(userTrendPoints || charsTrendPoints) && (
-                    <div className="mt-5 grid gap-4 lg:grid-cols-2">
+                    <div className="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-2">
                       {userTrendPoints && (
                         <div>
                           <p className="mb-2 text-sm font-black text-foreground">

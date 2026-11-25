@@ -47,7 +47,10 @@ describe("buildComponentEmbed", () => {
   });
 
   test("</script> が含まれてもJSONを壊さない (エスケープは呼び出し側のserializeJsonLd担当)", () => {
-    const payload = buildComponentEmbed({ ...base, description: "</script><script>alert(1)</script>" });
+    const payload = buildComponentEmbed({
+      ...base,
+      description: "</script><script>alert(1)</script>",
+    });
     const json = JSON.stringify(payload);
     // 生の "</script" がそのまま入るのは、serializeJsonLdで \u003c に変換してから出力する前提
     expect(json).toContain("</script>");

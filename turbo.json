@@ -5,16 +5,11 @@
     "dev": {
       "cache": false,
       "persistent": true,
-      "passThroughEnv": [
-        "*"
-      ]
+      "passThroughEnv": ["*"]
     },
     "typecheck": {
       "outputs": [],
-      "inputs": [
-        "$TURBO_DEFAULT$",
-        "../biome.json"
-      ]
+      "inputs": ["$TURBO_DEFAULT$", "../biome.json"]
     },
     "test": {
       "cache": false
@@ -25,16 +20,11 @@
     "//#frontend:dev": {
       "cache": false,
       "persistent": true,
-      "passThroughEnv": [
-        "*"
-      ]
+      "passThroughEnv": ["*"]
     },
     "//#frontend:build": {
       "cache": false,
-      "outputs": [
-        "frontend/.next/**",
-        "!frontend/.next/cache/**"
-      ],
+      "outputs": ["frontend/.next/**", "!frontend/.next/cache/**"],
       "inputs": [
         "frontend/src/**",
         "frontend/public/**",
@@ -46,9 +36,7 @@
         "frontend/bun.lock",
         "frontend/.npmrc"
       ],
-      "passThroughEnv": [
-        "*"
-      ]
+      "passThroughEnv": ["*"]
     },
     "//#frontend:typecheck": {
       "outputs": [],

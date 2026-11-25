@@ -10,17 +10,29 @@ export const TOTAL_CACHE_WARM_INTERVAL_MS = 600 * 1000;
 export const DELETED_USER_FILTER =
   "(u.user_id IS NOT NULL AND u.username NOT ILIKE 'deleted%user' AND u.display_name NOT ILIKE 'deleted%user')";
 
-export function jsonResponse(body: unknown, status = 200, headers?: Record<string, string>): Response {
+export function jsonResponse(
+  body: unknown,
+  status = 200,
+  headers?: Record<string, string>,
+): Response {
   const responseHeaders = new Headers({ "Content-Type": "application/json" });
   if (headers) {
     for (const [key, value] of Object.entries(headers)) responseHeaders.set(key, value);
   }
   return new Response(JSON.stringify(body), { status, headers: responseHeaders });
 }
-export function jsonError(status: number, message: string, headers?: Record<string, string>): Response {
+export function jsonError(
+  status: number,
+  message: string,
+  headers?: Record<string, string>,
+): Response {
   return jsonResponse({ detail: message }, status, headers);
 }
-export function plainTextResponse(text: string, headers?: Record<string, string>, status = 200): Response {
+export function plainTextResponse(
+  text: string,
+  headers?: Record<string, string>,
+  status = 200,
+): Response {
   const responseHeaders = new Headers({ "Content-Type": "text/plain; charset=utf-8" });
   if (headers) {
     for (const [key, value] of Object.entries(headers)) responseHeaders.set(key, value);

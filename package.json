@@ -32,5 +32,8 @@
   },
   "overrides": {
     "undici": "^6.29.1"
+  },
+  "patchedDependencies": {
+    "@electric-sql/pglite-socket@0.3.0": "patches/@electric-sql%2Fpglite-socket@0.3.0.patch"
   }
 }

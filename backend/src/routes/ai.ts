@@ -1,6 +1,7 @@
 /**
  * AIチャット (/ai/*)。DeepSeek (OpenAI互換) + ツール (DB読取 / サンドボックスコマンド / Web検索)。
  * ストリーミングはSSEで返す。管理は管理者セッション (またはAI_REQUIRE_ADMIN=false時は公開)。
+ * 会話履歴はクライアント (localStorage) が保持するため、サーバーにスレッド保存APIはない。
  */
 import type { Context, Hono } from "hono";
 import { getCookie } from "hono/cookie";
@@ -10,13 +11,7 @@ import { ADMIN_COOKIE_NAME, isApiClient, verifyAdminSession } from "../adminAuth
 import { jsonResponse, jsonError, readBodyCapped } from "../http";
 import type { AppEnv } from "../types";
 import type { RouteHelpers } from "./context";
-import {
-  prepareAIChat,
-  runAIChat,
-  type AiMessageRow,
-  type ChatEvent,
-  type ThreadRow,
-} from "../ai/chatService";
+import { prepareAIChat, runAIChat, type ChatEvent } from "../ai/chatService";
 
 function isAuthorized(c: Context, h: RouteHelpers): boolean {
   const cfg = h.cfg;
@@ -68,35 +63,11 @@ export function register(app: Hono<AppEnv>, h: RouteHelpers): void {
     return { guild, pool };
   };
 
-  /** スレッド一覧 */
-  app.get("/ai/threads", async (c) => {
+  /** AI機能の稼働/権限チェック (画面の初期状態判定用) */
+  app.get("/ai/status", async (c) => {
     const guard = await requireAuthAndGuild(c);
     if (guard instanceof Response) return guard;
-    const { guild, pool } = guard;
-    const { rows } = await pool.query<ThreadRow>(
-      `SELECT id, title, created_at, updated_at FROM ai_threads
-       WHERE guild_id = $1 ORDER BY updated_at DESC LIMIT 50`,
-      [guild.guildId],
-    );
-    return jsonResponse({ threads: rows });
-  });
-
-  /** スレッドのメッセージ取得 */
-  app.get("/ai/threads/:id", async (c) => {
-    const guard = await requireAuthAndGuild(c);
-    if (guard instanceof Response) return guard;
-    const { guild, pool } = guard;
-    const threadId = c.req.param("id");
-    const { rows: threadRows } = await pool.query<ThreadRow>(
-      "SELECT id, title, created_at, updated_at FROM ai_threads WHERE id = $1 AND guild_id = $2",
-      [threadId, guild.guildId],
-    );
-    if (threadRows.length === 0) return jsonError(404, "Thread not found");
-    const { rows } = await pool.query<AiMessageRow>(
-      "SELECT id, role, content, tool_runs, created_at FROM ai_messages WHERE thread_id = $1 ORDER BY id",
-      [threadId],
-    );
-    return jsonResponse({ thread: threadRows[0], messages: rows });
+    return jsonResponse({ ok: true });
   });
 
   /** メンション用ユーザー情報 (ids=カンマ区切りのuser_id) */
@@ -104,6 +75,10 @@ export function register(app: Hono<AppEnv>, h: RouteHelpers): void {
     const guard = await requireAuthAndGuild(c);
     if (guard instanceof Response) return guard;
     const { guild, pool } = guard;
+    // 軽量とはいえ無制限のDBアクセスを避けるためIP単位で制限する
+    if (!cache.consumeLimit(`ai-mentions:${getPeerIp(c)}`, 120, 600)) {
+      return jsonError(429, "リクエストが多すぎます。しばらく待ってから再試行してください。");
+    }
     const raw = c.req.query("ids") ?? "";
     const ids = raw
       .split(",")
@@ -133,42 +108,26 @@ export function register(app: Hono<AppEnv>, h: RouteHelpers): void {
     return jsonResponse({ users }, 200, { "Cache-Control": "public, max-age=300" });
   });
 
-  /** スレッド削除 */
-  app.delete("/ai/threads/:id", async (c) => {
-    const guard = await requireAuthAndGuild(c);
-    if (guard instanceof Response) return guard;
-    const { guild, pool } = guard;
-    const threadId = c.req.param("id");
-    const result = await pool.query("DELETE FROM ai_threads WHERE id = $1 AND guild_id = $2", [
-      threadId,
-      guild.guildId,
-    ]);
-    if (result.rowCount === 0) return jsonError(404, "Thread not found");
-    return jsonResponse({ ok: true });
-  });
-
   /** チャット (SSEストリーミング)。パイプライン本体はai/chatServiceに共用実装がある */
   app.post("/ai/chat", async (c) => {
     const guard = await requireAuthAndGuild(c);
     if (guard instanceof Response) return guard;
-    const { guild, pool } = guard;
+    const { guild } = guard;
 
     const clientIp = getPeerIp(c);
 
-    const body = await readBodyCapped(c.req.raw, 64_000);
+    // 履歴を含むため上限は大きめ (sanitizeHistoryでさらに切り詰める)
+    const body = await readBodyCapped(c.req.raw, 256_000);
     if (!body) return jsonError(422, "Invalid JSON body");
     let message = "";
-    let threadId = "";
-    let editOf = 0;
+    let history: unknown = undefined;
     try {
       const parsed = JSON.parse(body.toString("utf8")) as {
         message?: string;
-        threadId?: string;
-        editOf?: number | string;
+        history?: unknown;
       };
       message = String(parsed.message ?? "");
-      threadId = String(parsed.threadId ?? "");
-      editOf = Number(parsed.editOf ?? 0);
+      history = parsed.history;
     } catch {
       return jsonError(422, "Invalid JSON body");
     }
@@ -178,8 +137,7 @@ export function register(app: Hono<AppEnv>, h: RouteHelpers): void {
       clientIp,
       privileged: isPrivileged(c),
       message,
-      threadId,
-      editOf,
+      history,
     });
     if (!prepared.ok) return jsonError(prepared.status, prepared.detail);
 

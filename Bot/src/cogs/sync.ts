@@ -9,6 +9,7 @@ import {
 import type { Pool } from "pg";
 import { EXCLUDED_USER_IDS } from "../config";
 import { batchExecute } from "../db";
+import { upsertGuild } from "../guildRegistry";
 import { describeChannel } from "./logger";
 
 const SYNC_INTERVAL_MS = 30 * 60 * 1000;
@@ -104,6 +105,9 @@ async function syncChannelsAndMembers(client: Client, pool: Pool): Promise<void>
 async function syncGuildChannelsAndMembers(pool: Pool, guild: Guild): Promise<void> {
   const me = guild.members.me;
   if (!me) return;
+
+  // 起動直後はギルド登録と並走するため、channels(guild_id FK)より先にギルド行を保証する
+  await upsertGuild(pool, guild);
 
   const guildChannels = [...guild.channels.cache.values()];
   const textAndForum = guildChannels.filter(
@@ -289,8 +293,9 @@ async function enrichUserProfiles(client: Client, pool: Pool): Promise<void> {
 async function refreshAvatars(client: Client, pool: Pool): Promise<void> {
   const { rows } = await pool.query(
     `
-    SELECT DISTINCT gm.user_id
+    SELECT gm.user_id
     FROM guild_members gm
+    GROUP BY gm.user_id
     ORDER BY random()
     LIMIT 2000
     `,

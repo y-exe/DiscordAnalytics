@@ -37,7 +37,16 @@ import type { RouteHelpers } from "./context";
 
 /** 関係グラフ (/graph/*) */
 export function register(app: Hono<AppEnv>, h: RouteHelpers): void {
-  const { cfg, cache, deps, getPeerIp, requireGuild, getChannelScopeIds, requireMonthAccess, monthCacheControl } = h;
+  const {
+    cfg,
+    cache,
+    deps,
+    getPeerIp,
+    requireGuild,
+    getChannelScopeIds,
+    requireMonthAccess,
+    monthCacheControl,
+  } = h;
 
   const graphRelation = async (c: Context, isAll: boolean) => {
     const guildOrError = await requireGuild(c);

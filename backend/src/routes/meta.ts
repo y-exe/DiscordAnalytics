@@ -37,7 +37,16 @@ import type { RouteHelpers } from "./context";
 
 /** メタ情報 (/guild-context, /internal/caddy-ask) */
 export function register(app: Hono<AppEnv>, h: RouteHelpers): void {
-  const { cfg, cache, deps, getPeerIp, requireGuild, getChannelScopeIds, requireMonthAccess, monthCacheControl } = h;
+  const {
+    cfg,
+    cache,
+    deps,
+    getPeerIp,
+    requireGuild,
+    getChannelScopeIds,
+    requireMonthAccess,
+    monthCacheControl,
+  } = h;
 
   app.get("/guild-context", async (c) => {
     const guildOrError = await requireGuild(c);
@@ -56,7 +65,6 @@ export function register(app: Hono<AppEnv>, h: RouteHelpers): void {
       { "Cache-Control": "public, max-age=300" },
     );
   });
-
 
   app.get("/internal/caddy-ask", async (c) => {
     // Caddyからの直接リクエスト (XFFが全て信頼ホップ) のみ許可する。
@@ -82,5 +90,4 @@ export function register(app: Hono<AppEnv>, h: RouteHelpers): void {
     }
     return plainTextResponse("OK", { "Cache-Control": "no-store" });
   });
-
 }

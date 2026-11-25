@@ -382,7 +382,7 @@ export function InteractiveAreaChart({
                   type="button"
                   aria-selected={k === range}
                   onClick={() => changeRange(k)}
-                  className={`relative z-10 rounded-full px-2.5 py-1 text-xs font-medium outline-none transition-[color,transform] duration-150 ease-out active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-neutral-400 sm:px-3 ${
+                  className={`relative z-10 rounded-full px-2.5 py-1 text-xs font-medium outline-none transition-[color] duration-150 ease-out focus-visible:ring-2 focus-visible:ring-neutral-400 sm:px-3 ${
                     k === range ? "text-neutral-900 dark:text-neutral-50" : "text-neutral-500"
                   }`}
                 >

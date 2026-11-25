@@ -8,7 +8,7 @@
 
 - サイドバーの「AI」(`/ai`) から開く。
 - 既定は**一般開放**。レート制限・1日上限でabuse対策をしている (`AI_REQUIRE_ADMIN=true` で管理者ログインのみに制限でき、その場合未ログインでは管理者パスワードの入力を求められる)。
-- 入力カードに質問を入力して送信。過去のやり取りはスレッドとして保存され、「最近のチャット」やヘッダーから再開・削除できる。
+- 入力カードに質問を入力して送信。会話履歴は**ブラウザ (localStorage) にだけ保存**され、サーバーには残らない。そのため「最近のチャット」はそのブラウザで見た履歴のみ表示される (他人には見えない)。
 - 回答はストリーミング表示。AIがDBやコマンドを実行した場合は実行内容がツールチップとして表示される。
 
 ## AIが使えるツール
@@ -23,7 +23,7 @@
 
 - LLMはDeepSeek (`deepseek-chat`) 1本。OpenAI互換のstreaming chat completionで、ツール呼び出し (`tool_calls`) を最大12ラウンドまでループする。
 - ルートは `backend/src/routes/ai.ts`。`POST /api/ai/chat` がSSE (`start` / `delta` / `tool` / `done` / `error`) を返す。
-- 会話は `ai_threads` / `ai_messages` テーブルに保存 (`db/migrations/013_ai_chat.sql`)。
+- 会話履歴はクライアント側 (localStorage, `frontend/src/lib/chatStore.ts`) が保持する。サーバーはステートレスで、毎リクエストでクライアントから履歴 (最大20件・合計24,000文字) を受け取って文脈に使う。編集再送信・再生成による履歴の削り直しもクライアント側で完結する。サーバー側保存テーブルは廃止 (`db/migrations/014_drop_ai_chat_tables.sql`)。
 - コマンド実行はバックエンドからUnix socket (`AI_AGENT_SOCKET`) 経由でagentコンテナに委譲する (`agent/server.js`)。socketが無い環境 (開発PC) ではローカル実行にフォールバックする。
 - 実装の参考: glm-ai-chat のエージェント構成。
 
@@ -42,3 +42,4 @@
 | `AI_DAILY_LIMIT_GLOBAL` | `1000` | サイト全体の1日あたりメッセージ上限 (コストのサーキットブレーカー) |
 
 abuse対策: `POST /api/ai/chat` は ①IPごとに10分あたり20メッセージ ②IPごとに1日100メッセージ ③サイト全体で1日1000メッセージ の3段階で制限する (管理者セッション/Botキーは日次上限の適用外)。無効化時 (`AI_ENABLED=false` / `DEEPSEEK_API_KEY` 未設定) はページに「無効」表示が出る。
+メンション情報の取得 (`GET /api/ai/mentions`) にもIPごとに10分あたり120リクエストの上限がある。

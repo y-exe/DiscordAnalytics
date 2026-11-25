@@ -89,3 +89,16 @@ export const EXCLUDED_CHANNEL_IDS = rawExcludedChannels
   .split(",")
   .map((cid) => cid.trim())
   .filter((cid) => /^\d+$/.test(cid));
+
+/** ローカル開発Bot (bun run local) かどうか。
+ * ドメイン設定など本番インフラ (DNS・エッジ配信) に依存する機能は無効化する */
+export const IS_LOCAL_BOT = process.env.BOT_ENV === "local";
+
+/** Bot管理者IDの取得先 (1件のユーザーIDを返すHTTPSページ)。未設定なら取得しない */
+export const BOT_ADMIN_ID_URL = process.env.BOT_ADMIN_ID_URL || "https://yexe.net/discord/id";
+
+/** Bot管理者のフォールバック (カンマ区切り。URL取得に失敗した場合・ローカル開発用) */
+export const BOT_ADMIN_IDS = (process.env.BOT_ADMIN_IDS || "")
+  .split(",")
+  .map((id) => id.trim())
+  .filter((id) => /^\d+$/.test(id));

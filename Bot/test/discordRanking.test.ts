@@ -18,7 +18,15 @@ const rows = Array.from({ length: 10 }, (_, index) => ({
 test("コンポーネントの構造 (見出し・順位・絵文字) を維持する", () => {
   const shared = buildRankingComponent("test", rows, 2026, 10);
   assert.deepEqual(shared, originalMessage);
-  const withRole = buildRankingComponent("test", rows, 2026, 10, true, undefined, "1503873180362739834");
+  const withRole = buildRankingComponent(
+    "test",
+    rows,
+    2026,
+    10,
+    true,
+    undefined,
+    "1503873180362739834",
+  );
   assert.match(JSON.stringify(withRole), /ロールが付与/);
   assert.deepEqual(buildRankingContainer("test", rows, 2026, 10).toJSON(), originalMessage);
 });

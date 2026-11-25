@@ -16,6 +16,7 @@ const { SafeDiskCache } = await import("../src/safeCache");
 const adminAuth = await import("../src/adminAuth");
 const { createApp } = await import("../src/api");
 const { validateReadOnlySql } = await import("../src/ai/tools");
+const { sanitizeHistory, MAX_HISTORY_MESSAGES } = await import("../src/ai/chatService");
 const { createAdminSession, ADMIN_COOKIE_NAME } = adminAuth;
 
 type AppDeps = Parameters<typeof createApp>[0];
@@ -63,7 +64,7 @@ function fakeGuildRow(guildId: string) {
   };
 }
 
-/** ギルド解決とai_*テーブル操作に応答するテスト用Poolスタブ */
+/** ギルド解決など最低限のクエリに応答するテスト用Poolスタブ (履歴のDB保存はもう無い) */
 function stubPool(): Pool {
   return {
     query: async (sql: unknown) => {
@@ -71,8 +72,6 @@ function stubPool(): Pool {
       if (text.includes("FROM guilds ")) return { rows: [fakeGuildRow("987654321")] };
       if (text.includes("FROM guild_domains")) return { rows: [] };
       if (text.includes("FROM information_schema.columns")) return { rows: [] };
-      if (text.includes("FROM ai_threads")) return { rows: [] };
-      if (text.includes("FROM ai_messages")) return { rows: [] };
       return { rows: [], rowCount: 1 };
     },
   } as unknown as Pool;
@@ -116,7 +115,38 @@ test("db_queryは読み取り専用クエリのみ許可する", () => {
   assert.notEqual(validateReadOnlySql("SELECT 1; SELECT 2"), null); // 複数ステートメント禁止
   assert.equal(validateReadOnlySql("SELECT 1;"), null);
   assert.notEqual(validateReadOnlySql("SELECT pg_read_file('/etc/passwd')"), null);
+  assert.notEqual(
+    validateReadOnlySql("SELECT set_config('default_transaction_read_only','off',false)"),
+    null,
+  );
   assert.notEqual(validateReadOnlySql("COPY messages TO '/tmp/x'"), null);
+});
+
+test("履歴は件数・文字数上限で切り詰められる", () => {
+  // 正常系: user/assistantの交互履歴がそのまま通る
+  const history = sanitizeHistory([
+    { role: "user", content: "こんにちは" },
+    { role: "assistant", content: "どうも" },
+  ]);
+  assert.ok(Array.isArray(history));
+  assert.equal(history.length, 2);
+  // 不正な型はエラー文字列
+  assert.equal(sanitizeHistory("hello"), "history must be an array");
+  assert.equal(sanitizeHistory([{ role: "system", content: "x" }]).length, 0);
+  assert.equal(sanitizeHistory([{ role: "user", content: 123 }]).length, 0);
+  // 件数上限: 新しいものを残す
+  const many = Array.from({ length: MAX_HISTORY_MESSAGES + 5 }, (_, i) => ({
+    role: i % 2 === 0 ? "user" : "assistant",
+    content: `m${i}`,
+  }));
+  const trimmed = sanitizeHistory(many) as { content: string }[];
+  assert.equal(trimmed.length, MAX_HISTORY_MESSAGES);
+  assert.equal(trimmed[trimmed.length - 1].content, `m${many.length - 1}`);
+  // 1件あたりの文字数上限
+  const long = sanitizeHistory([{ role: "user", content: "あ".repeat(9999) }]) as {
+    content: string;
+  }[];
+  assert.ok(long[0].content.length <= 4000);
 });
 
 test("AI機能を無効化 (AI_ENABLED=false) すると/aiは503を返す", async () => {
@@ -125,7 +155,7 @@ test("AI機能を無効化 (AI_ENABLED=false) すると/aiは503を返す", asyn
   try {
     const { app, cleanup } = await buildTestApp();
     try {
-      const response = await app.request("/ai/threads");
+      const response = await app.request("/ai/status");
       assert.equal(response.status, 503);
     } finally {
       await cleanup();
@@ -142,10 +172,10 @@ test("AI_REQUIRE_ADMIN=trueなら管理者セッションなしの/aiは403を�
   const token = createAdminSession(cfg.adminSessionSecret, Math.floor(Date.now() / 1000));
   const { app, cleanup } = await buildTestApp();
   try {
-    const response = await app.request("/ai/threads");
+    const response = await app.request("/ai/status");
     assert.equal(response.status, 403);
     // 有効なセッションなら通る
-    const ok = await app.request("/ai/threads", {
+    const ok = await app.request("/ai/status", {
       headers: { cookie: `${ADMIN_COOKIE_NAME}=${token}` },
     });
     assert.equal(ok.status, 200);
@@ -155,11 +185,11 @@ test("AI_REQUIRE_ADMIN=trueなら管理者セッションなしの/aiは403を�
   }
 });
 
-test("一般開放時はセッションなしでスレッド一覧を取得できる", async () => {
+test("一般開放時はセッションなしで/ai/statusが200を返す", async () => {
   const restore = withAiEnv();
   const { app, cleanup } = await buildTestApp();
   try {
-    const response = await app.request("/ai/threads");
+    const response = await app.request("/ai/status");
     assert.equal(response.status, 200);
   } finally {
     await cleanup();
@@ -198,33 +228,21 @@ test("連投は短時間上限で429になる", async () => {
   }
 });
 
-test("管理者セッションがあればスレッド一覧を取得できる", async () => {
-  const restore = withAiEnv();
-  const cfg = await config.loadConfig();
-  const token = createAdminSession(cfg.adminSessionSecret, Math.floor(Date.now() / 1000));
-  const { app, cleanup } = await buildTestApp();
-  try {
-    const response = await app.request("/ai/threads", {
-      headers: { cookie: `${ADMIN_COOKIE_NAME}=${token}` },
-    });
-    assert.equal(response.status, 200);
-    const body = (await response.json()) as { threads: unknown[] };
-    assert.deepEqual(body.threads, []);
-  } finally {
-    await cleanup();
-    restore();
-  }
-});
-
 /** DeepSeek APIのSSEレスポンスを擬似的に返すfetchスタブ */
-function stubDeepSeekFetch(responses: string[]): { restore: () => void; calls: string[] } {
+function stubDeepSeekFetch(responses: string[]): {
+  restore: () => void;
+  calls: string[];
+  bodies: string[];
+} {
   const original = globalThis.fetch;
   let index = 0;
   const calls: string[] = [];
+  const bodies: string[] = [];
   globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
     const url = String(input);
     if (!url.includes("/chat/completions")) return original(input, init);
     calls.push(url);
+    if (init?.body) bodies.push(String(init.body));
     const body = responses[Math.min(index, responses.length - 1)];
     index++;
     const sse = body
@@ -233,10 +251,10 @@ function stubDeepSeekFetch(responses: string[]): { restore: () => void; calls: s
       .join("");
     return new Response(sse, { status: 200, headers: { "content-type": "text/event-stream" } });
   }) as typeof fetch;
-  return { restore: () => (globalThis.fetch = original), calls };
+  return { restore: () => (globalThis.fetch = original), calls, bodies };
 }
 
-test("/ai/chatがSSEで応答しメッセージを保存する", async () => {
+test("/ai/chatがSSEで応答し、クライアント送信の履歴を文脈に使う", async () => {
   const restore = withAiEnv();
   const cfg = await config.loadConfig();
   const token = createAdminSession(cfg.adminSessionSecret, Math.floor(Date.now() / 1000));
@@ -252,7 +270,13 @@ test("/ai/chatがSSEで応答しメッセージを保存する", async () => {
         "content-type": "application/json",
         cookie: `${ADMIN_COOKIE_NAME}=${token}`,
       },
-      body: JSON.stringify({ message: "テスト" }),
+      body: JSON.stringify({
+        message: "続きを教えて",
+        history: [
+          { role: "user", content: "最初の質問" },
+          { role: "assistant", content: "最初の回答" },
+        ],
+      }),
     });
     assert.equal(response.status, 200);
     assert.ok(response.headers.get("content-type")?.includes("text/event-stream"));
@@ -262,6 +286,11 @@ test("/ai/chatがSSEで応答しメッセージを保存する", async () => {
     assert.ok(text.includes("こんにちは"));
     assert.ok(text.includes('"type":"done"'));
     assert.equal(stub.calls.length, 1);
+    // DeepSeekに送るmessagesにクライアント履歴が含まれていること
+    const sent = JSON.parse(stub.bodies[0] ?? "{}") as { messages?: { role: string }[] };
+    const roles = (sent.messages ?? []).map((m) => m.role);
+    assert.ok(roles.filter((r) => r === "user").length === 2); // 履歴+今回分
+    assert.ok(roles.includes("assistant"));
   } finally {
     stub.restore();
     await cleanup();
@@ -312,47 +341,20 @@ test("/ai/chatがツール呼び出しを1ラウンド実行して回答する",
   }
 });
 
-test("editOfを指定するとそのメッセージ以降を削り直して送れる", async () => {
+test("historyの型が不正な場合は422になる", async () => {
   const restore = withAiEnv();
   const cfg = await config.loadConfig();
   const token = createAdminSession(cfg.adminSessionSecret, Math.floor(Date.now() / 1000));
-  const queries: string[] = [];
-  const pool = {
-    query: async (sql: unknown) => {
-      const text = typeof sql === "string" ? sql : String((sql as { text?: string })?.text ?? "");
-      queries.push(text);
-      if (text.includes("FROM guilds ")) return { rows: [fakeGuildRow("987654321")] };
-      if (text.includes("FROM guild_domains")) return { rows: [] };
-      if (text.includes("FROM information_schema.columns")) return { rows: [] };
-      if (text.includes("SELECT id, title FROM ai_threads")) return { rows: [{ id: "t1", title: "テスト" }] };
-      if (text.includes("SELECT 1 FROM ai_messages WHERE id")) return { rows: [{ "1": 1 }] };
-      if (text.includes("FROM ai_messages")) return { rows: [] };
-      return { rows: [], rowCount: 1 };
-    },
-  } as unknown as Pool;
-  const app = createApp({
-    config: cfg,
-    cache: new (await import("../src/safeCache")).SafeDiskCache(
-      (await import("node:os")).tmpdir(),
-      1024 * 1024,
-    ),
-    getPool: () => pool,
-    consumeLoginLimits: async () => true,
-    verifyAdminPassword: async () => false,
-  });
-  const stub = stubDeepSeekFetch([JSON.stringify({ choices: [{ delta: { content: "やり直しました" } }] }), "data: [DONE]"]);
+  const { app, cleanup } = await buildTestApp();
   try {
     const response = await app.request("/ai/chat", {
       method: "POST",
       headers: { "content-type": "application/json", cookie: `${ADMIN_COOKIE_NAME}=${token}` },
-      body: JSON.stringify({ message: "編集後の質問", threadId: "t1", editOf: 42 }),
+      body: JSON.stringify({ message: "テスト", history: "履歴ではなく文字列" }),
     });
-    assert.equal(response.status, 200);
-    await response.text();
-    assert.ok(queries.some((q) => q.startsWith("DELETE FROM ai_messages WHERE thread_id = $1 AND id >= $2")));
-    assert.ok(queries.some((q) => q.includes("RETURNING id")));
+    assert.equal(response.status, 422);
   } finally {
-    stub.restore();
+    await cleanup();
     restore();
   }
 });

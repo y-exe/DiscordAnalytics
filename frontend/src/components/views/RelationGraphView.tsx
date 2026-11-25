@@ -10,14 +10,8 @@ import louvain from "graphology-communities-louvain";
 import PageToolbar from "@/components/shell/PageToolbar";
 import PeriodPicker from "@/components/shell/PeriodPicker";
 import { BoostBadge, ServerTagChip, UserAvatar } from "./discord/DiscordIdentity";
-import { DEFAULT_AVATAR_URL } from "./RankTopCard";
 import { fetchAPI } from "@/lib/api";
-import {
-  defaultAvatarUrl,
-  formatDiscordDate,
-  profileBannerStyle,
-  snowflakeToDate,
-} from "@/lib/discord-assets";
+import { formatDiscordDate, profileBannerStyle, snowflakeToDate } from "@/lib/discord-assets";
 import { periodLabel } from "@/lib/period";
 
 interface GraphNode {
@@ -78,35 +72,12 @@ function seededRandom(seed: number): () => number {
 function avatarForGraph(url: string | null | undefined, renderSize: number): string {
   // 大きく表示されるアイコンほど高解像度で取得する
   const wanted = renderSize >= 16 ? 256 : renderSize >= 8 ? 128 : 64;
-  if (!url) return DEFAULT_AVATAR_URL;
+  if (!url) return "";
   if (url.includes("size=")) return url.replace(/size=\d+/, "size=" + wanted);
   return url.includes("?") ? url + "&size=" + wanted : url + "?size=" + wanted;
 }
 
 const CROP_SIZE = 96;
-
-let cachedFallbackCircle: string | null = null;
-
-/** デフォルトアバターの円形クロップ。失敗した場合は単色円を生成する */
-async function circularFallbackAvatar(): Promise<string> {
-  if (cachedFallbackCircle) return cachedFallbackCircle;
-  try {
-    cachedFallbackCircle = cropToCircle(await loadImageElement(DEFAULT_AVATAR_URL));
-  } catch {
-    const canvas = document.createElement("canvas");
-    canvas.width = CROP_SIZE;
-    canvas.height = CROP_SIZE;
-    const ctx = canvas.getContext("2d");
-    if (ctx) {
-      ctx.fillStyle = "#99aab5";
-      ctx.beginPath();
-      ctx.arc(CROP_SIZE / 2, CROP_SIZE / 2, CROP_SIZE / 2, 0, Math.PI * 2);
-      ctx.fill();
-      cachedFallbackCircle = canvas.toDataURL("image/png");
-    }
-  }
-  return cachedFallbackCircle ?? DEFAULT_AVATAR_URL;
-}
 
 /** 画像を円形にクロップしたdataURLを返す。ringColor指定時は外周にリングを焼き込む
  * (node-imageレイヤーは円形クリップを行わないため)。リング幅は全員一定 (画素ベース) */
@@ -168,7 +139,6 @@ async function cropAvatars(
         const candidates = [node.avatar, node.avatar_fallback]
           .filter((url): url is string => Boolean(url))
           .map((url) => avatarForGraph(url, sizeFor(node.user_id)));
-        candidates.push(defaultAvatarUrl(node.user_id));
         let cropped = "";
         for (const url of candidates) {
           const cachedCrop = cropCache.get(`${url}|${ringKey}`);
@@ -183,7 +153,8 @@ async function cropAvatars(
             // 次の候補へ
           }
         }
-        result.set(node.user_id, cropped || (await circularFallbackAvatar()));
+        // クロップできなければ画像なし (ノードは単色円で描かれる)
+        result.set(node.user_id, cropped);
         done += 1;
         onProgress?.(done, nodes.length);
       }),
@@ -457,7 +428,8 @@ export default function RelationGraphView({
       );
       if (disposed) return;
       graph.forEachNode((node) => {
-        graph.setNodeAttribute(node, "image", croppedAvatars.get(node) ?? DEFAULT_AVATAR_URL);
+        const image = croppedAvatars.get(node);
+        if (image) graph.setNodeAttribute(node, "image", image);
       });
 
       // レイアウト: 全体で「一つの円」。最大界隈は中央の円盤、他の界隈は
