@@ -11,6 +11,8 @@
  * 認証・ギルド解決・レート制限はSSEルート (/ai/chat) と同一のパイプライン
  * (ai/chatService) を使う。クッキーはupgrade時のリクエストヘッダーから取る。
  */
+import os from "node:os";
+import path from "node:path";
 import { getBackendRuntime, deriveMountedRequestEnv } from "./runtime";
 import { ADMIN_COOKIE_NAME, verifyAdminSession } from "./adminAuth";
 import { resolveGuildByHost } from "./guilds";
@@ -39,15 +41,21 @@ function readCookie(cookieHeader: string | null, name: string): string | undefin
 
 export function startWsServer(): void {
   const port = Number(process.env.AI_WS_PORT || 4322);
+  // 接続数上限 (IP単位 / 全体)。DoS対策
+  const MAX_CONNS_PER_IP = 10;
+  const MAX_CONNS_TOTAL = 200;
+  const connsPerIp = new Map<string, number>();
+  let totalConns = 0;
   // 起動時にランタイム (DB接続) を用意してからlistenする (DB一時障害時は再試行)
   const runtimePromise = getBackendRuntime();
   // db_query用の読み取り専用プール (遅延接続)
   let readOnlyPool: import("pg").Pool | null = null;
   const chatDeps = async (): Promise<ChatDeps> => {
     const runtime = await getBackendRuntime();
-    // ディスクキャッシュはNext側プロセスと別ディレクトリにする (同時書き込みの競合回避)
+    // レート制限はSSEルートと共通のSQLiteキャッシュを使う (Next側と同一ディレクトリ。
+    // SQLite WALは複数プロセスからの同時書き込みに対応しており、SSE/WSで上限を分腹されない)
     const cache = new SafeDiskCache(
-      "/tmp/discord_analytics_ws_cache",
+      path.join(os.tmpdir(), "discord_analytics_diskcache_v14"),
       runtime.config.cacheSizeLimitBytes,
     );
     return {
@@ -102,17 +110,31 @@ export function startWsServer(): void {
         const mounted = deriveMountedRequestEnv(
           new Request("http://internal/", { headers: request.headers }),
         );
+        // 同一IPからの大量接続・全体の接続飽和を防ぐ
+        const ipKey = mounted.peerIp;
+        if (totalConns >= MAX_CONNS_TOTAL || (connsPerIp.get(ipKey) ?? 0) >= MAX_CONNS_PER_IP) {
+          return new Response("Too many connections", { status: 429 });
+        }
+        totalConns += 1;
+        connsPerIp.set(ipKey, (connsPerIp.get(ipKey) ?? 0) + 1);
         const data: WsData = {
           guild: { guildId: guild.guildId, name: guild.name },
-          clientIp: mounted.peerIp,
+          clientIp: ipKey,
           privileged,
           chat: null,
         };
         const upgraded = bunServer.upgrade(request, { data });
-        if (!upgraded) return new Response("Upgrade failed", { status: 400 });
+        if (!upgraded) {
+          totalConns -= 1;
+          connsPerIp.set(ipKey, Math.max(0, (connsPerIp.get(ipKey) ?? 1) - 1));
+          return new Response("Upgrade failed", { status: 400 });
+        }
         return undefined;
       },
       websocket: {
+        // DoS対策: 1メッセージはチャット送信に十分な16KBまで。アイドル切断は120秒 (Bunの上限)
+        maxPayloadLength: 16_384,
+        idleTimeout: 120,
         async message(ws, raw) {
           const data = ws.data as WsData;
           if (data.chat) {
@@ -170,7 +192,13 @@ export function startWsServer(): void {
           }
         },
         close(ws) {
-          (ws.data as WsData).chat?.abort();
+          const data = ws.data as WsData;
+          data.chat?.abort();
+          // 接続カウントを戻す (peerIpはws.dataに保持しておく)
+          totalConns = Math.max(0, totalConns - 1);
+          const current = connsPerIp.get(data.clientIp) ?? 0;
+          if (current <= 1) connsPerIp.delete(data.clientIp);
+          else connsPerIp.set(data.clientIp, current - 1);
         },
       },
     });
