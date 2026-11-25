@@ -200,7 +200,8 @@ export default function AIChatView() {
 
   const loadThreads = useCallback(async (): Promise<boolean> => {
     try {
-      const res = await fetchAPI("/ai/threads", { retries: 0, quiet: true });
+      // 503 (AI無効) 等も状態判定に使うためfetchAPI (非okでthrow) ではなく素のfetchを使う
+      const res = await fetch(`${API_URL}/ai/threads`, { credentials: "include" });
       if (res.ok) {
         const body = (await res.json()) as { threads: ThreadSummary[] };
         setThreads(body.threads ?? []);
