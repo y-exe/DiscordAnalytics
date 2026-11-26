@@ -42,7 +42,7 @@ export async function generateMetadata({ params, searchParams }: PageProps): Pro
   const [guild, baseUrl, insights] = await Promise.all([
     getGuildContext(),
     getGuildBaseUrl(),
-    /^\d+$/.test(channelId) ? fetchChannelInsights(channelId, m) : Promise.resolve(null),
+    /^-?\d+$/.test(channelId) ? fetchChannelInsights(channelId, m) : Promise.resolve(null),
   ]);
   const subject = guild.name || "Discordサーバー";
   const name = insights?.channel?.name;
@@ -61,7 +61,7 @@ export async function generateMetadata({ params, searchParams }: PageProps): Pro
 export default async function ChannelDetailPage({ params, searchParams }: PageProps) {
   const { channelId } = await params;
   const { m } = await searchParams;
-  if (!/^\d+$/.test(channelId)) return null;
+  if (!/^-?\d+$/.test(channelId)) return null;
   const period = parsePeriod(m);
   const [guild, baseUrl, insights] = await Promise.all([
     getGuildContext(),
