@@ -147,15 +147,12 @@ function visibilityMode(settings: {
 } {
   const stored = settings.visibilityMode;
   if (stored === "whitelist" || stored === "hidden") {
-    const ids =
-      stored === "whitelist" ? settings.whitelistChannelIds : settings.hiddenChannelIds;
+    const ids = stored === "whitelist" ? settings.whitelistChannelIds : settings.hiddenChannelIds;
     if (ids.length > 0) {
       return {
         mode: stored,
         label:
-          stored === "whitelist"
-            ? `ホワイトリスト ${ids.length}件`
-            : `${ids.length}件を非表示`,
+          stored === "whitelist" ? `ホワイトリスト ${ids.length}件` : `${ids.length}件を非表示`,
       };
     }
     return { mode: stored, label: "未設定 (現在はすべて表示)" };
@@ -181,7 +178,9 @@ function emojiButton(
 ): ButtonBuilder {
   const match = /^<a?:(\w+):(\d+)>$/.exec(emoji);
   const result = new ButtonBuilder().setCustomId(id).setLabel(label).setStyle(style);
-  return match ? result.setEmoji({ id: match[2], name: match[1] }) : result.setEmoji({ name: emoji });
+  return match
+    ? result.setEmoji({ id: match[2], name: match[1] })
+    : result.setEmoji({ name: emoji });
 }
 
 /** リスト表示。多すぎる場合は省略して注記する */
@@ -202,7 +201,9 @@ function headingCard(
   const display = text(heading);
   if (iconUrl) {
     container.addSectionComponents(
-      new SectionBuilder().addTextDisplayComponents(display).setThumbnailAccessory(new ThumbnailBuilder().setURL(iconUrl)),
+      new SectionBuilder()
+        .addTextDisplayComponents(display)
+        .setThumbnailAccessory(new ThumbnailBuilder().setURL(iconUrl)),
     );
   } else {
     container.addTextDisplayComponents(display);
@@ -305,32 +306,32 @@ export function wizardView(
         ),
       );
     } else {
-    const lines = config.domains.map(
-      (d) => `- \`https://${d}\`${config.primaryDomains.includes(d) ? " (代表)" : ""}`,
-    );
-    menu.addTextDisplayComponents(
-      text(
-        `### ${uiEmoji.count} ダッシュボードドメイン\nWebサイトのURLです。標準サブドメイン (\`[サーバーID].${SUBDOMAIN_BASE_DOMAIN}\`) はBot参加時に自動登録されるので、このままでも使えます。\n**現在 (${config.domains.length}件)**\n${lines.length > 0 ? lines.join("\n") : "なし"}`,
-      ),
-    );
-    menu.addTextDisplayComponents(
-      text(
-        `### ${uiEmoji.check} ドメインを追加\n**独自ドメイン**: DNS管理画面でCNAMEを向けてから登録します (Cloudflare管理なら登録後にダッシュボードへのリンクを出します)。\n**招待コード**: このサーバーの招待コードから \`[コード].${SUBDOMAIN_BASE_DOMAIN}\` を作れます (一覧にないコードは「カスタム招待コード」から入力)。`,
-      ),
-    );
-    menu.addActionRowComponents(
-      row(button(cid.dom("custom", 0), "独自ドメインを登録", ButtonStyle.Success)),
-    );
-    menu.addActionRowComponents(inviteDomainSelect(invites, 0));
-    if (config.domains.length > 0) {
-      menu.addSeparatorComponents(new SeparatorBuilder());
+      const lines = config.domains.map(
+        (d) => `- \`https://${d}\`${config.primaryDomains.includes(d) ? " (代表)" : ""}`,
+      );
       menu.addTextDisplayComponents(
         text(
-          `**${uiEmoji.warning} ドメインを削除**\n選んだドメインの登録を削除します (そのURLにアクセスできなくなります)。標準サブドメインは削除できません。`,
+          `### ${uiEmoji.count} ダッシュボードドメイン\nWebサイトのURLです。標準サブドメイン (\`[サーバーID].${SUBDOMAIN_BASE_DOMAIN}\`) はBot参加時に自動登録されるので、このままでも使えます。\n**現在 (${config.domains.length}件)**\n${lines.length > 0 ? lines.join("\n") : "なし"}`,
         ),
       );
-      menu.addActionRowComponents(domainRemoveSelect(config));
-    }
+      menu.addTextDisplayComponents(
+        text(
+          `### ${uiEmoji.check} ドメインを追加\n**独自ドメイン**: DNS管理画面でCNAMEを向けてから登録します (Cloudflare管理なら登録後にダッシュボードへのリンクを出します)。\n**招待コード**: このサーバーの招待コードから \`[コード].${SUBDOMAIN_BASE_DOMAIN}\` を作れます (一覧にないコードは「カスタム招待コード」から入力)。`,
+        ),
+      );
+      menu.addActionRowComponents(
+        row(button(cid.dom("custom", 0), "独自ドメインを登録", ButtonStyle.Success)),
+      );
+      menu.addActionRowComponents(inviteDomainSelect(invites, 0));
+      if (config.domains.length > 0) {
+        menu.addSeparatorComponents(new SeparatorBuilder());
+        menu.addTextDisplayComponents(
+          text(
+            `**${uiEmoji.warning} ドメインを削除**\n選んだドメインの登録を削除します (そのURLにアクセスできなくなります)。標準サブドメインは削除できません。`,
+          ),
+        );
+        menu.addActionRowComponents(domainRemoveSelect(config));
+      }
     }
   } else if (page === 1) {
     menu.addTextDisplayComponents(
@@ -550,9 +551,7 @@ export function privateView(
     null,
   );
   menu.addSeparatorComponents(new SeparatorBuilder());
-  menu.addActionRowComponents(
-    row(button(cid.dom("label"), "表示名を変更", ButtonStyle.Primary)),
-  );
+  menu.addActionRowComponents(row(button(cid.dom("label"), "表示名を変更", ButtonStyle.Primary)));
   menu.addActionRowComponents(
     new ActionRowBuilder<ChannelSelectMenuBuilder>().addComponents(
       new ChannelSelectMenuBuilder()
@@ -577,7 +576,9 @@ export function privateView(
     menu.addActionRowComponents(backRow());
   }
   menu.addTextDisplayComponents(
-    text("-# 集約中のチャンネルはWebサイトのチャンネル一覧から消えます (発言数はそのまま合算されます)。"),
+    text(
+      "-# 集約中のチャンネルはWebサイトのチャンネル一覧から消えます (発言数はそのまま合算されます)。",
+    ),
   );
   return [menu];
 }
@@ -631,7 +632,9 @@ export function visibilityView(
     mode === "whitelist" ? "選択したチャンネルを表示対象に戻す" : "選択したチャンネルを表示する";
 
   menu.addTextDisplayComponents(
-    text(`**${mode === "whitelist" ? "表示するチャンネル" : "隠すチャンネル"} (${ids.length}件)**\n${bulletList(ids, (id) => `<#${id}>`)}`),
+    text(
+      `**${mode === "whitelist" ? "表示するチャンネル" : "隠すチャンネル"} (${ids.length}件)**\n${bulletList(ids, (id) => `<#${id}>`)}`,
+    ),
   );
   menu.addActionRowComponents(
     new ActionRowBuilder<ChannelSelectMenuBuilder>().addComponents(
@@ -729,7 +732,9 @@ export function managersView(config: GuildConfigWithDisplay): ContainerBuilder[]
     menu.addActionRowComponents(backRow());
   }
   menu.addTextDisplayComponents(
-    text("-# サーバー管理権限 (サーバー設定を変更できる人)・サーバー所有者・Bot管理者は常に編集できます。"),
+    text(
+      "-# サーバー管理権限 (サーバー設定を変更できる人)・サーバー所有者・Bot管理者は常に編集できます。",
+    ),
   );
   return [menu];
 }
@@ -803,15 +808,14 @@ function domainRemoveSelect(
             : "登録を削除します",
       ),
   );
-  return new ActionRowBuilder<StringSelectMenuBuilder>()
-    .addComponents(
-      new StringSelectMenuBuilder()
-        .setCustomId(cid.sel("domainremove"))
-        .setPlaceholder("削除するドメインを選択")
-        .setMinValues(1)
-        .setMaxValues(Math.min(SELECT_MAX, options.length))
-        .addOptions(options),
-    );
+  return new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+    new StringSelectMenuBuilder()
+      .setCustomId(cid.sel("domainremove"))
+      .setPlaceholder("削除するドメインを選択")
+      .setMinValues(1)
+      .setMaxValues(Math.min(SELECT_MAX, options.length))
+      .addOptions(options),
+  );
 }
 
 /** 招待コードを選ぶプルダウン。先頭に「カスタム招待コード」を置く */
@@ -959,7 +963,10 @@ async function upsertGuildDomain(
   if (rows.length > 0) {
     const existing = rows[0] as DomainRow;
     if (String(existing.guild_id) !== guildId && existing.is_active) {
-      return "そのドメインは既に他のサーバーが使用しています。";
+      return (
+        "そのドメインは既に他のサーバーが使用しています。\n" +
+        "-# URLは大文字小文字を区別しません (大文字小文字違いのコードも同じURLになります)。他の招待コードを使うか、独自ドメインを登録してください。"
+      );
     }
   }
   await pool.query(
@@ -1087,7 +1094,8 @@ async function registerCustomDomain(pool: Pool, guildId: string, raw: string): P
     zoneNs = await dns.resolveNs(zone).catch(() => []);
   }
   const recordGuide = `追加するレコード: **CNAME** · 名前 \`${domain}\` · 内容 \`${target}\``;
-  const cloudflare = zone !== null && zoneNs.some((ns) => ns.toLowerCase().endsWith("ns.cloudflare.com"));
+  const cloudflare =
+    zone !== null && zoneNs.some((ns) => ns.toLowerCase().endsWith("ns.cloudflare.com"));
   if (cloudflare && zone) {
     return [
       `ダッシュボードのドメインを **https://${domain}** に登録しました。`,
@@ -1312,7 +1320,10 @@ async function fetchInviteCodes(guild: Guild | null): Promise<string[]> {
   if (!guild) return [];
   const codes: string[] = [];
   try {
-    const vanity = await guild.fetchVanityData().then((v) => v.code).catch(() => null);
+    const vanity = await guild
+      .fetchVanityData()
+      .then((v) => v.code)
+      .catch(() => null);
     if (vanity) codes.push(vanity);
     const invites = await guild.invites.fetch();
     for (const invite of invites.values()) {
@@ -1379,7 +1390,9 @@ async function renderView(
         ctx.guildName,
         config,
         ctx.iconUrl,
-        view === "done" ? "セットアップが完了しました！ いつでも /setup から変更できます。" : undefined,
+        view === "done"
+          ? "セットアップが完了しました！ いつでも /setup から変更できます。"
+          : undefined,
       );
     default: {
       const settings = readDisplaySettings(config);
@@ -1635,7 +1648,10 @@ export function loadSetup(client: Client, pool: Pool): void {
           return;
         }
         // ローカルBotではドメイン操作を受け付けない (本番DB・DNS・エッジに依存するため)
-        if (IS_LOCAL_BOT && (kind === "dom" || action === "invitedom" || action === "domainremove")) {
+        if (
+          IS_LOCAL_BOT &&
+          (kind === "dom" || action === "invitedom" || action === "domainremove")
+        ) {
           console.warn(`ローカルBotでドメイン操作が送られました (${interaction.customId})`);
           await renderOrUpdate(interaction, "domains");
           return;
@@ -1697,7 +1713,9 @@ export function loadSetup(client: Client, pool: Pool): void {
         }
         const [, action, modalPageArg] = interaction.customId.split(":");
         const modalPage =
-          modalPageArg !== undefined && /^\d+$/.test(modalPageArg) ? Number(modalPageArg) : undefined;
+          modalPageArg !== undefined && /^\d+$/.test(modalPageArg)
+            ? Number(modalPageArg)
+            : undefined;
         if (action === "label") {
           const raw = interaction.fields.getTextInputValue("label").trim();
           await mergeDisplayConfig(pool, interaction.guildId, {
