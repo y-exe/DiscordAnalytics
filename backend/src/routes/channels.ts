@@ -329,7 +329,7 @@ export function register(app: Hono<AppEnv>, h: RouteHelpers): void {
 
     const ttl = isAll ? 86400 : 600;
     const headers = { "Cache-Control": `public, max-age=${ttl}` };
-    const ckey = `ch_ins_v2_${guild.guildId}_${channelId}_${isAll ? "all" : `${yearParam}_${monthParam}`}`;
+    const ckey = `ch_ins_v3_${guild.guildId}_${channelId}_${isAll ? "all" : `${yearParam}_${monthParam}`}`;
     const cached = cache.get(ckey);
     if (cached !== undefined) return jsonResponse(cached, 200, headers);
 
@@ -395,17 +395,18 @@ export function register(app: Hono<AppEnv>, h: RouteHelpers): void {
       if (parent && parent !== String(row.channel_id))
         parentIdOf.set(String(row.channel_id), parent);
     }
-    // 集約エントリは getChannelScopeIds で集約カテゴリ配下のチャンネルID一覧を取得
+    // 集約エントリは getChannelScopeIds で集約対象のチャンネルID一覧を取得
+    // (通常チャンネルは scopeIds = null が正常で、targetIds は実チャンネル+スレッド)
     const scopeIds = isAggregatedEntry
       ? await getChannelScopeIds(pool, guild, channelId)
       : null;
-    if (scopeIds === null || scopeIds instanceof Response) {
+    if (scopeIds instanceof Response || (isAggregatedEntry && scopeIds === null)) {
       cache.set(ckey, emptyPayload, ttl);
       return jsonResponse(emptyPayload, 200, headers);
     }
-    const targetIds = isAggregatedEntry
-      ? scopeIds
-      : [
+    const targetIds =
+      scopeIds ??
+      [
           channelId,
           ...[...parentIdOf.entries()]
             .filter(([, parent]) => parent === channelId)
