@@ -49,6 +49,8 @@ function tempDirectory(): string {
 async function buildTestApp(overrides: Partial<AppDeps> = {}): Promise<TestApp> {
   const directory = tempDirectory();
   const cache = new SafeDiskCache(directory, 1024 * 1024);
+  // 許可オリジンの既定は空 (same-origin運用)。テストのログインOriginを通すためenvで許可する
+  process.env.ALLOWED_ORIGINS = "https://ymkw.top";
   const cfg = await config.loadConfig();
   let verifyCalls = 0;
 

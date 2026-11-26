@@ -11,7 +11,7 @@ export type CidrRange = [ipaddr.IPv4 | ipaddr.IPv6, number];
 
 const BASE_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
-const PROD_ALLOWED_ORIGINS = ["https://ymkw.top", "https://www.ymkw.top"];
+const PROD_ALLOWED_ORIGINS: string[] = [];
 const DEV_ALLOWED_ORIGINS = ["http://localhost:4321", "http://127.0.0.1:4321"];
 
 /** 追加で許可するオリジン (カンマ区切り)。マルチギルドで独自ドメインを使う場合に設定する */
@@ -278,7 +278,7 @@ export async function loadConfig(options: ConfigLoadOptions = {}): Promise<AppCo
         .map((host) => host.trim().toLowerCase())
         .filter((host) => host.length > 0),
     ),
-    publicHost: (process.env.PUBLIC_REQUEST_HOST || "analytics.ymkw.top").trim(),
+    publicHost: (process.env.PUBLIC_REQUEST_HOST || "").trim(),
     dbDsn: await adjustDbDsn(rawDsn, options),
     apiSecret,
     caddyAskToken: (process.env.CADDY_ASK_TOKEN || "").trim(),

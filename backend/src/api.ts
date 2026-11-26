@@ -184,6 +184,10 @@ export function startWarmLoop(app: Hono<AppEnv>, cfg: AppConfig): () => void {
   let stopped = false;
 
   const warmOnce = async (): Promise<void> => {
+    if (!cfg.publicHost) {
+      // ウォームリクエストのギルド解決には実サイトのHostが必要。未設定ならスキップする
+      return;
+    }
     for (const target of targets) {
       const started = performance.now();
       try {

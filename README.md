@@ -83,7 +83,7 @@ Cloudflare Workers向けの成果物は`npm run cf:build`で生成し、`npm run
 
 ## Discordでの月間レポート共有
 
-月間レポートURLのHTMLは、公開済み月に限り`discord:component-embed`のリンクをサーバー側で出力します。`/ranking/monthly/{year}/{month}/discord-embed`はBotのランキングメッセージと同じ共通描画処理・集計条件を使用します。バックエンドはリクエストのHostヘッダー(または`x-forwarded-host`)でギルドを解決し、`guilds`テーブルの設定(発言王ロール・除外チャンネル・ダッシュボードドメイン)を使って描画します。`GUILD_ID`は未登録ホスト(`api.ymkw.top`等)向けの既定ギルド指定です。未公開月のJSONは認証済みでも公開しません。Discordの3,000バイト制限を超える場合は順位・氏名を削らず、通常のOpen Graphプレビューへフォールバックします。
+月間レポートURLのHTMLは、公開済み月に限り`discord:component-embed`のリンクをサーバー側で出力します。`/ranking/monthly/{year}/{month}/discord-embed`はBotのランキングメッセージと同じ共通描画処理・集計条件を使用します。バックエンドはリクエストのHostヘッダー(または`x-forwarded-host`)でギルドを解決し、`guilds`テーブルの設定(発言王ロール・除外チャンネル・ダッシュボードドメイン)を使って描画します。`GUILD_ID`は未登録ホスト(localhost等)向けの既定ギルド指定です。未公開月のJSONは認証済みでも公開しません。Discordの3,000バイト制限を超える場合は順位・氏名を削らず、通常のOpen Graphプレビューへフォールバックします。
 
 ## マルチサーバー対応
 

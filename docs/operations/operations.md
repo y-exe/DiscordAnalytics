@@ -11,7 +11,7 @@ VPSのUptime Kuma (`127.0.0.1:3001`) に2026-11-10に追加した監視。
 | analytics-api | HTTP | `https://analytics.ymkw.top/api/health` → 200 |
 | analytics-frontend | HTTP | `https://analytics.ymkw.top/` → 200 |
 
-analytics.ymkw.topはDNS-only (Cloudflareを経由しない) のため、Kumaからオリジンを直接確認します。既存の `ymkwtop-backend` モニタ (`https://api.ymkw.top`) は統合コンテナのAPIを指しています。証明書はcertbotの自動更新で、dry-runによる検証が済んでいます。
+analytics.ymkw.topはDNS-only (Cloudflareを経由しない) のため、Kumaからオリジンを直接確認します。旧 `ymkwtop-backend` モニタ (`https://api.ymkw.top`) はホスト廃止に合わせて削除済み (`https://analytics.ymkw.top/api/health` に統合)。証明書はcertbotの自動更新で、dry-runによる検証が済んでいます。
 
 ## バックアップ
 
@@ -22,7 +22,6 @@ PostgreSQLのデータ (discord_logs custom dumpとpg_dumpall) は、vpsリポ�
 | ホスト | 発行方式 |
 | --- | --- |
 | analytics.ymkw.top | certbot (authenticator: nginx、HTTP-01) |
-| api.ymkw.top ほか既存ホスト | 同上 (CloudflareのOrigin証明書として使用) |
 | テナントドメイン (`*.yexe.top` と登録済み独自ドメイン) | Caddy on-demand TLS (VPS上 `127.0.0.1:8444`) |
 
 要点を記録します。

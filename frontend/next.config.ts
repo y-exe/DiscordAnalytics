@@ -82,12 +82,12 @@ const nextConfig: NextConfig = {
         // 同一オリジン形式の /api/* も移行期のWorkersで動くようにする (プレフィックスは剥がす)
         {
           source: "/api/:path*",
-          destination: `${process.env.NEXT_PUBLIC_API_URL ?? "https://api.ymkw.top"}/:path*`,
+          destination: `${process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8070"}/:path*`,
         },
       ],
       fallback: legacySources.map((source) => ({
         source,
-        destination: `${process.env.NEXT_PUBLIC_API_URL ?? "https://api.ymkw.top"}${source}`,
+        destination: `${process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8070"}${source}`,
       })),
     };
   },

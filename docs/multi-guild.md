@@ -28,7 +28,7 @@
 テナントドメイン / analytics.ymkw.top
         │
 VPS: Nginx (stream SNI分岐 / 後述フェーズ6)
-        ├─ 既存ホスト名 (api.ymkw.top等) → 従来どおりNginxのHTTPS処理
+        ├─ 既存ホスト名 (grafana.yexe.xyz等) → 従来どおりNginxのHTTPS処理
         └─ マルチテナント系 (*.yexe.top + 登録済み独自ドメイン) → Caddy (on-demand TLS)
                 │ WireGuard (10.77.0.2:80, Host保持)
         k3s Traefik
@@ -111,11 +111,11 @@ CREATE TABLE guild_members (
 - SSR (サーバーコンポーネント) はクラスター内のバックエンドService URLを直接呼ぶ (`API_URL` 環境変数、プレフィックスなし)
 - バックエンドは **Hostヘッダーでギルドを解決**する:
   1. `guild_domains` / `guilds` ルックアップ (キャッシュ付き)。未登録Hostは404
-  2. 過渡期の `api.ymkw.top` は既定ギルドにフォールバック (移行完了後に廃止)
+  2. `DEFAULT_GUILD_HOSTS` (localhost等) は既定ギルドにフォールバック
 - **代表ドメイン**: `guild_domains.is_primary` が立つドメインをダッシュボードの代表URL (ランキングメッセージのボタン等の外部リンク先) に使う。メインギルドは `analytics.ymkw.top` が代表 (`ymkw.top` は案内サイトのため除外)
 - ギルド別設定 (display_config, 除外ch) はバックエンドがキャッシュ付きでロード
 - キャッシュキーに guildId を含める。ウォームループは「ドメイン設定のあるアクティブギルド」をループ
-- `allowedOrigins` は同一オリジン化により縮小 (過渡期はymkw.top系を維持)
+- `allowedOrigins` は同一オリジン化により縮小 (追加は `ALLOWED_ORIGINS` env)
 
 ### 統合コンテナ (Honoマウント)
 
