@@ -1,10 +1,10 @@
 import { ActivityType, Client, Events, GatewayIntentBits, Options, REST, Routes } from "discord.js";
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
-import { adjustDbDsn, BOT_ADMIN_ID_URL, GUILD_ID, TOKEN } from "./config";
+import { adjustDbDsn, BOT_ADMIN_ID_URL, TOKEN } from "./config";
 import { initializeBotAdmins, refreshBotAdmins } from "./domain/permissions";
 import { createPool } from "./db";
-import { deactivateGuild, seedPrimaryGuildConfig, syncGuildRegistry } from "./guildRegistry";
+import { deactivateGuild, syncGuildRegistry } from "./guildRegistry";
 import { loadLogger } from "./cogs/logger";
 import { loadRanking, rankingCommandDefinitions } from "./cogs/ranking";
 import { loadSetup, setupCommandDefinitions } from "./cogs/setup";
@@ -40,7 +40,11 @@ export async function startBot(): Promise<{ shutdown(): Promise<void> }> {
     // ステータスメッセージ (tokumei-botと同じCustom Activity)
     presence: {
       activities: [
-        { name: "/setup | DiscordAnalytics by yexe", state: "/setup | DiscordAnalytics by yexe", type: ActivityType.Custom },
+        {
+          name: "/setup | DiscordAnalytics by yexe",
+          state: "/setup | DiscordAnalytics by yexe",
+          type: ActivityType.Custom,
+        },
       ],
     },
   });
@@ -96,8 +100,6 @@ export async function startBot(): Promise<{ shutdown(): Promise<void> }> {
 
     try {
       await syncGuildRegistry(pool, ready.guilds.cache.values());
-      const primary = ready.guilds.cache.get(GUILD_ID);
-      if (primary) await seedPrimaryGuildConfig(pool, primary);
     } catch (error) {
       console.error(`ギルド登録エラー: ${error}`);
     }

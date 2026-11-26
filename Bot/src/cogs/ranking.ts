@@ -12,7 +12,6 @@ import {
   StringSelectMenuOptionBuilder,
 } from "discord.js";
 import type { Pool, PoolClient } from "pg";
-import { ANNOUNCE_CHANNEL_ID, EXCLUDED_CHANNEL_IDS, GUILD_ID, KING_ROLE_ID } from "../config";
 import { isGuildManager } from "../domain/permissions";
 import { updateMonthlyRoleOnce } from "../monthlyRole";
 import {
@@ -184,16 +183,13 @@ export async function runRankingLogic(
   pool: Pool,
   year: number,
   month: number,
+  guildId: string,
   channel?: SendableChannels | null,
   isAuto = false,
-  guildId = GUILD_ID,
 ): Promise<void> {
   try {
     const config = await getGuildConfig(pool, guildId);
-    const excludedChannelIds = config?.excludedChannelIds.length
-      ? config.excludedChannelIds
-      : EXCLUDED_CHANNEL_IDS;
-    const rows = await monthlyRanking(pool, year, month, guildId, excludedChannelIds);
+    const rows = await monthlyRanking(pool, year, month, guildId, config?.excludedChannelIds ?? []);
 
     const guild = client.guilds.cache.get(guildId) ?? null;
 
@@ -230,8 +226,8 @@ export async function runRankingLogic(
     let targetChannel: SendableChannels | null = channel ?? null;
     if (isAuto) {
       let announce: SendableChannels | null = null;
-      const announceChannelId = config?.announceChannelId ?? ANNOUNCE_CHANNEL_ID;
-      if (announceChannelId === "0") {
+      const announceChannelId = config?.announceChannelId;
+      if (!announceChannelId) {
         announce = null;
       } else if (guild) {
         const found = guild.channels.cache.get(announceChannelId);
@@ -272,9 +268,7 @@ export async function runMonthlyAnnouncement(
     if (!announce) continue;
 
     const config = await getGuildConfig(pool, target.guildId);
-    const excludedChannelIds = target.excludedChannelIds.length
-      ? target.excludedChannelIds
-      : EXCLUDED_CHANNEL_IDS;
+    const excludedChannelIds = target.excludedChannelIds;
     try {
       const rows = await monthlyRanking(pool, year, month, target.guildId, excludedChannelIds);
       if (rows.length === 0) continue;
@@ -302,11 +296,16 @@ async function handleAllCommand(
 ): Promise<void> {
   await interaction.deferReply();
 
-  const guildId = interaction.guildId ?? GUILD_ID;
+  const guildId = interaction.guildId;
+  if (!guildId) {
+    await interaction.followUp({
+      content: "サーバー内で実行してください。",
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
   const config = await getGuildConfig(pool, guildId);
-  const excludedChannelIds = config?.excludedChannelIds.length
-    ? config.excludedChannelIds
-    : EXCLUDED_CHANNEL_IDS;
+  const excludedChannelIds = config?.excludedChannelIds ?? [];
 
   const { rows } = await pool.query(totalRankingQuery(guildId, excludedChannelIds));
 
@@ -371,9 +370,7 @@ export function loadRanking(client: Client, pool: Pool): () => void {
         try {
           await updateMonthlyRoleOnce(pool, guildId, kingRoleId, async (year, month, db) => {
             const config = await getGuildConfig(pool, guildId);
-            const excludedChannelIds = config?.excludedChannelIds.length
-              ? config.excludedChannelIds
-              : EXCLUDED_CHANNEL_IDS;
+            const excludedChannelIds = config?.excludedChannelIds ?? [];
             const rows = await monthlyRanking(db, year, month, guildId, excludedChannelIds);
             if (!rows[0]) throw new Error(`No ranking data for ${year}-${month}`);
             const guild = await client.guilds.fetch(guildId);
@@ -429,6 +426,13 @@ export function loadRanking(client: Client, pool: Pool): () => void {
       }
 
       if (interaction.isStringSelectMenu() && interaction.customId === MONTH_SELECT_CUSTOM_ID) {
+        if (!interaction.inGuild() || !interaction.guildId) {
+          await interaction.reply({
+            content: "サーバー内で実行してください。",
+            flags: MessageFlags.Ephemeral,
+          });
+          return;
+        }
         const [yearStr, monthStr] = (interaction.values[0] ?? "").split("-");
         const year = Number(yearStr);
         const month = Number(monthStr);
@@ -454,9 +458,8 @@ export function loadRanking(client: Client, pool: Pool): () => void {
           pool,
           year,
           month,
+          interaction.guildId,
           targetChannel,
-          false,
-          interaction.guildId ?? GUILD_ID,
         );
         return;
       }

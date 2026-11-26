@@ -1,6 +1,5 @@
 import type { Guild } from "discord.js";
 import type { Pool } from "pg";
-import { ANNOUNCE_CHANNEL_ID, EXCLUDED_CHANNEL_IDS, GUILD_ID, KING_ROLE_ID } from "./config";
 
 export interface GuildConfigRow {
   guildId: string;
@@ -53,8 +52,7 @@ export function readDisplaySettings(config: GuildConfigWithDisplay): DisplaySett
     privateChatCategoryIds: idList(raw.privateChatCategoryIds),
     whitelistChannelIds: idList(raw.whitelistChannelIds),
     hiddenChannelIds: idList(raw.hiddenChannelIds),
-    visibilityMode:
-      mode === "all" || mode === "whitelist" || mode === "hidden" ? mode : undefined,
+    visibilityMode: mode === "all" || mode === "whitelist" || mode === "hidden" ? mode : undefined,
     bottomChannelCategoryIds: idList(raw.bottomChannelCategoryIds),
     setupManagerRoleIds: idList(raw.setupManagerRoleIds),
     setupDone: raw.setupDone === true,
@@ -177,33 +175,6 @@ export async function registerGuildIdSubdomain(pool: Pool, guildId: string): Pro
   );
 }
 
-/**
- * 既定ギルドの環境変数設定をシードする。
- * /setup で設定済みの値 (NULL以外) は上書きせず、NULLの列だけ環境変数値で埋める。
- */
-export async function seedPrimaryGuildConfig(pool: Pool, guild: Guild): Promise<void> {
-  const announce = ANNOUNCE_CHANNEL_ID && ANNOUNCE_CHANNEL_ID !== "0" ? ANNOUNCE_CHANNEL_ID : null;
-  const kingRole = KING_ROLE_ID && KING_ROLE_ID !== "0" ? KING_ROLE_ID : null;
-  await pool.query(
-    `
-    INSERT INTO guilds (guild_id, name, icon_url, announce_channel_id, king_role_id, excluded_channel_ids, is_active)
-    VALUES ($1, $2, $3, $4, $5, $6::bigint[], TRUE)
-    ON CONFLICT (guild_id) DO UPDATE
-    SET name = EXCLUDED.name,
-        icon_url = EXCLUDED.icon_url,
-        announce_channel_id = COALESCE(guilds.announce_channel_id, EXCLUDED.announce_channel_id),
-        king_role_id = COALESCE(guilds.king_role_id, EXCLUDED.king_role_id),
-        excluded_channel_ids = CASE
-          WHEN guilds.excluded_channel_ids = '{}'::bigint[] THEN EXCLUDED.excluded_channel_ids
-          ELSE guilds.excluded_channel_ids
-        END,
-        is_active = TRUE,
-        updated_at = CURRENT_TIMESTAMP
-    `,
-    [guild.id, guild.name, guild.iconURL(), announce, kingRole, [...EXCLUDED_CHANNEL_IDS]],
-  );
-}
-
 /** Botが参加中の全ギルドを登録する */
 export async function syncGuildRegistry(pool: Pool, guilds: Iterable<Guild>): Promise<void> {
   for (const guild of guilds) {
@@ -264,11 +235,6 @@ export async function listAnnounceGuilds(pool: Pool): Promise<GuildAnnounceRow[]
       },
     ];
   });
-}
-
-/** 既定ギルドのID (環境変数 or shared定数) */
-export function primaryGuildId(): string {
-  return GUILD_ID;
 }
 
 function preferApex(domains: string[]): string | null {

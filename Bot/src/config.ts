@@ -67,13 +67,7 @@ export async function adjustDbDsn(
   return dsn;
 }
 
-// 既定ギルドのID。マルチサーバー運用では guilds テーブル設定が優先され、
-// この値は guilds テーブルのシードと履歴スキャナーの既定ターゲットに使われる。
-export const GUILD_ID = process.env.GUILD_ID?.trim() || "";
 export const OWNER_ID = process.env.OWNER_ID || "0";
-export const ADMIN_ROLE_ID = process.env.ADMIN_ROLE_ID || "0";
-export const KING_ROLE_ID = process.env.KING_ROLE_ID || "";
-export const ANNOUNCE_CHANNEL_ID = process.env.ANNOUNCE_CHANNEL_ID || "0";
 
 const rawExcludedUsers = process.env.EXCLUDED_USER_IDS || "";
 export const EXCLUDED_USER_IDS = new Set(
@@ -82,13 +76,6 @@ export const EXCLUDED_USER_IDS = new Set(
     .map((uid) => uid.trim())
     .filter((uid) => /^\d+$/.test(uid)),
 );
-
-// 既定ギルドのランキング除外チャンネル。/setup による guilds テーブル設定が優先される。
-const rawExcludedChannels = process.env.EXCLUDED_CHANNEL_IDS || "";
-export const EXCLUDED_CHANNEL_IDS = rawExcludedChannels
-  .split(",")
-  .map((cid) => cid.trim())
-  .filter((cid) => /^\d+$/.test(cid));
 
 /** ローカル開発Bot (bun run local) かどうか。
  * ドメイン設定など本番インフラ (DNS・エッジ配信) に依存する機能は無効化する */

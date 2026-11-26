@@ -13,7 +13,7 @@ import {
   type AnyThreadChannel,
 } from "discord.js";
 import type { Pool, PoolClient } from "pg";
-import { adjustDbDsn, EXCLUDED_USER_IDS, GUILD_ID, TOKEN } from "./config";
+import { adjustDbDsn, EXCLUDED_USER_IDS, TOKEN } from "./config";
 import { batchExecute, createPool, withTransaction } from "./db";
 import { getGuildConfig } from "./guildRegistry";
 import { describeChannel } from "./cogs/logger";
@@ -609,10 +609,7 @@ function parseBackfillOptions(): BackfillOptions {
         default: process.env.BACKFILL_BEFORE,
       },
       "reset-progress": { type: "boolean", default: false },
-      guild: {
-        type: "string",
-        default: process.env.BACKFILL_GUILD ?? GUILD_ID,
-      },
+      guild: { type: "string" },
     },
   });
   return {

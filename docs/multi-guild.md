@@ -92,7 +92,7 @@ CREATE TABLE guild_members (
 ```
 
 - マイグレーション時に既存 `messages` から `guilds` / `guild_members` / `channels.guild_id` を復元済み
-- 既定ギルド (`1355073968532619376`) には `KING_ROLE_ID`・除外ch・`display_config`・`ymkw.top` / `www.ymkw.top` をシード済み
+- ギルド設定はすべて `/setup` で管理 (envシードは廃止済み)
 - インデックスは `-- migrate: no-transaction` + `CREATE INDEX CONCURRENTLY`:
   - `idx_messages_human_guild_created_user (guild_id, created_at, user_id) WHERE is_bot = FALSE`
   - `idx_channels_guild ON channels (guild_id)`

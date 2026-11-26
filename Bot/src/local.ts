@@ -161,7 +161,7 @@ async function main(): Promise<void> {
     process.env.DISABLE_MONTHLY_ROLE = "1";
     // ドメイン設定など本番インフラに依存する機能の無効化フラグ (config.tsのIS_LOCAL_BOT)
     process.env.BOT_ENV = "local";
-    for (const key of ["GUILD_ID", "OWNER_ID", "SUBDOMAIN_BASE_DOMAIN", "SERVER_PUBLIC_IP"]) {
+    for (const key of ["OWNER_ID", "SUBDOMAIN_BASE_DOMAIN"]) {
       if (settings[key] !== undefined) process.env[key] = settings[key];
     }
     const mod = await import("./main.js");

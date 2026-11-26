@@ -40,12 +40,10 @@ cd db && bun install && bun run migrate
 | --- | --- |
 | `DB_DSN` | PostgreSQL接続文字列 (必須) |
 | `DISCORD_TOKEN` | Botトークン (Botのみ) |
-| `GUILD_ID` 等 | 既定ギルドのシード値 ([初期設定](../guide/setup.md)) |
 | `API_SECRET` | API認証用シークレット (32文字以上) |
 | `ADMIN_SESSION_SECRET` | 管理者セッション鍵 (32文字以上) |
 | `ADMIN_PASSWORD_HASH` | 管理者パスワードハッシュ (ソルト付きPBKDF2-HMAC-SHA-256) |
 | `SUBDOMAIN_BASE_DOMAIN` | テナントサブドメインの基準ドメイン (既定: `yexe.top`) |
-| `SERVER_PUBLIC_IP` | 独自ドメインのDNS検証に使うVPS IP |
 
 `ADMIN_PASSWORD_HASH` は次のコマンドで生成します。
 

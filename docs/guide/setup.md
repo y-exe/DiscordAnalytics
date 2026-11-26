@@ -17,7 +17,7 @@
 | 告知先 | 月間ランキングの告知先チャンネルを設定・解除 |
 | ドメイン | 標準サブドメインの再登録、招待コード・独自ドメインの追加 (モーダル入力) |
 
-設定は `guilds` テーブルに保存され、`GUILD_ID`・`KING_ROLE_ID`・`ANNOUNCE_CHANNEL_ID`・`EXCLUDED_CHANNEL_IDS` の環境変数は既定ギルドのシード値です。起動時に未設定の列だけを埋め、`/setup` による設定を優先します。
+設定は `guilds` テーブルに保存され、すべて `/setup` から設定します (環境変数シードは廃止済み)。
 
 Web表示まわりは `guilds.display_config` (JSONB) に保存されます:
 
