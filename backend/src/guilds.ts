@@ -149,7 +149,7 @@ export async function resolveGuildByHost(
     guild = await loadGuildById(pool, config.guildId);
   } else {
     const { rows } = await pool.query(
-      "SELECT guild_id FROM guild_domains WHERE domain = $1 AND is_active",
+      "SELECT guild_id FROM guild_domains WHERE lower(domain) = $1 AND is_active",
       [host],
     );
     const guildId = rows.length > 0 ? parseId(rows[0].guild_id) : null;

@@ -90,7 +90,7 @@ export function register(app: Hono<AppEnv>, h: RouteHelpers): void {
     const pool = deps.getPool();
     if (!pool) return jsonError(503, "Service unavailable.");
     const { rows } = await pool.query(
-      "SELECT 1 FROM guild_domains WHERE domain = $1 AND is_active LIMIT 1",
+      "SELECT 1 FROM guild_domains WHERE lower(domain) = $1 AND is_active LIMIT 1",
       [domain],
     );
     if (rows.length === 0) {

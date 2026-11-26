@@ -950,9 +950,11 @@ async function upsertGuildDomain(
   source: "guild" | "invite" | "custom",
   inviteCode: string | null,
 ): Promise<string | null> {
+  // DNS名は大小を区別しないため、小文字に正規化して保存する (照合側も小文字化するため)
+  const key = domain.toLowerCase();
   const { rows } = await pool.query(
-    "SELECT guild_id, is_active FROM guild_domains WHERE domain = $1",
-    [domain],
+    "SELECT guild_id, is_active FROM guild_domains WHERE lower(domain) = $1",
+    [key],
   );
   if (rows.length > 0) {
     const existing = rows[0] as DomainRow;
@@ -970,7 +972,7 @@ async function upsertGuildDomain(
         invite_code = EXCLUDED.invite_code,
         is_active = TRUE
     `,
-    [domain, guildId, source, inviteCode],
+    [key, guildId, source, inviteCode],
   );
   return null;
 }
