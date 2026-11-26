@@ -62,9 +62,14 @@ export async function getGuildContext(): Promise<GuildContextInfo> {
         domain: body.domain ?? null,
         domains: Array.isArray(body.domains) ? body.domains.map(String) : [],
       };
+    } else if (cached) {
+      // バックエンド再起動中などは実データが返らない。ブランディング (アイコン・名前) が
+      // 消えるのを避けるため、期限切れでも最後に成功した値を続用する
+      return cached.value;
     }
   } catch {
-    // バックエンドが利用できない場合はフォールバック (ビルド時など)
+    // バックエンドが利用できない場合はフォールバック (ビルド時など)。期限切れでも続用
+    if (cached) return cached.value;
   }
 
   if (cache.size >= 200) cache.clear();
