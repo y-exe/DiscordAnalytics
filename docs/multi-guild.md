@@ -157,10 +157,10 @@ CREATE TABLE guild_members (
 ## テナント独自ドメイン (フェーズ6・7)
 
 - Caddy (VPSエッジ) の on-demand TLS で証明書を自動発行する
-  - `ask` エンドポイント: バックエンド `GET /internal/caddy-ask?domain=` が `guild_domains` の登録済みドメインなら200
+  - `ask` エンドポイント: バックエンド `GET /internal/caddy-ask?domain=` が `guild_domains` の登録済みドメインなら200。認可は `CADDY_ASK_TOKEN` (Caddyfileのask URLに `?token=` で渡す。実値はSOPS `ymkw-frontend.enc.yaml` と /etc/caddy/Caddyfile のみに置き、リポジトリのCaddyfileはプレースホルダ) か内部リクエスト (XFFが全て信頼ホップ) のみ許可
   - VPS Nginxは `stream` + `ssl_preread` でSNI分岐: 既存ホスト名 → 従来のHTTPS処理、それ以外 → Caddy
-- `/setup domain <domain>` で申請 → DNS確認 (CNAME/AがVPSを指しているかのHTTP検証) → `guild_domains` へ登録
-- apex (example.comのルート) もAレコードで対応可能 (Caddyが直接終端するため)
+- `/setup` で申請 → `guild_domains` へ登録 (DNS確認は行わない。未反映でも登録可能で、反映後に再度登録すると接続を確認できる)
+- 独自ドメインは **必ずCNAME** (`CNAME → [サーバーID].yexe.top`)。AレコードでのIP直指定は案内しない (VPSのIP変更時に個別対応が発生するため。apexのようなCNAME不可のレコードはダッシュボードドメインとして非対応)
 
 ## 認証 (フェーズ5)
 

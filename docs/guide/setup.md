@@ -38,11 +38,11 @@ Web表示まわりは `guilds.display_config` (JSONB) に保存されます:
 
 `/setup` → 「ドメイン」セクションから設定します。
 
-- 標準サブドメイン (`[サーバーID].yexe.top`) はBot参加時に自動登録されます。
+- 標準サブドメイン (`[サーバーID].yexe.top`) はBot参加時に自動登録され、削除はできない (独自ドメインのCNAME先として必須)。
 - 招待コード (`[コード].yexe.top`) はモーダルでコードを入力して設定。ケースセンシティブです。
-- 独自ドメインはDNSがVPS IP (`SERVER_PUBLIC_IP`) を向いている必要があります。
+- 独自ドメインは `CNAME → [サーバーID].yexe.top` を向けてください (必ずCNAME。VPSのIPを直接指定しない)。
 
-- 登録済み (かつ有効) ドメインだけがCaddyのon-demand TLSで証明書を発行されます (`/api/internal/caddy-ask` が `guild_domains` テーブルで判定)。
+- 登録済み (かつ有効) ドメインだけがCaddyのon-demand TLSで証明書を発行されます (`/api/internal/caddy-ask` が `guild_domains` テーブルで判定)。ask元の認可には `CADDY_ASK_TOKEN` (Caddyfileのask URLに `?token=` で渡す、SOPSで管理) を使う。
 - DNSをVPSに向けてからダッシュボードへアクセスすると、証明書発行が走ります。発行に失敗する場合はDNS伝播と `guild_domains` の有効フラグを確認します。
 - 無料サブドメインは失効チェッカー (6時間ごと) が管理します。基準ドメインは `SUBDOMAIN_BASE_DOMAIN` (既定: `yexe.top`)。
 - apex (`yexe.top` 自体) はテナント名前空間の対象外です。

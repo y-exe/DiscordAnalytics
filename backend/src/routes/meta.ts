@@ -1,5 +1,6 @@
 import type { Context, Hono } from "hono";
 import { getCookie } from "hono/cookie";
+import { timingSafeEqual } from "node:crypto";
 import type { Pool } from "pg";
 import {
   ADMIN_COOKIE_NAME,
@@ -67,10 +68,18 @@ export function register(app: Hono<AppEnv>, h: RouteHelpers): void {
   });
 
   app.get("/internal/caddy-ask", async (c) => {
-    // Caddyからの直接リクエスト (XFFが全て信頼ホップ) のみ許可する。
+    // CaddyのaskリクエストはTraefikを経由するためXFFでは判定できない。
+    // 共有トークン (CADDY_ASK_TOKEN / Caddyfileのask URLに ?token= で埋め込む) か、
+    // 内部リクエスト (XFFが全て信頼ホップ) のどちらかで許可する。
     // 一般公開されているとドメイン列挙 (200/404) が可能になるため。
     const env = c.env as { peerIp?: string; trustedPeer?: boolean } | undefined;
-    if (!env?.trustedPeer || env.peerIp !== "unknown") {
+    const token = c.req.query("token") ?? "";
+    const expected = cfg.caddyAskToken;
+    const tokenOk =
+      expected.length > 0 &&
+      token.length === expected.length &&
+      timingSafeEqual(Buffer.from(token), Buffer.from(expected));
+    if (!tokenOk && (!env?.trustedPeer || env.peerIp !== "unknown")) {
       return plainTextResponse("Not Found", { "Cache-Control": "no-store" }, 404);
     }
     const rawDomain = c.req.query("domain") ?? "";

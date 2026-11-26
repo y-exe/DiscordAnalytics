@@ -48,6 +48,8 @@ export interface AppConfig {
   publicHost: string;
   dbDsn: string;
   apiSecret: string;
+  /** Caddy on-demand TLS askエンドポイントの共有トークン。空ならtoken認証を無効化 */
+  caddyAskToken: string;
   adminSessionSecret: string;
   adminPasswordHash: string;
   enableApiDocs: boolean;
@@ -277,6 +279,7 @@ export async function loadConfig(options: ConfigLoadOptions = {}): Promise<AppCo
     publicHost: (process.env.PUBLIC_REQUEST_HOST || "analytics.ymkw.top").trim(),
     dbDsn: await adjustDbDsn(rawDsn, options),
     apiSecret,
+    caddyAskToken: (process.env.CADDY_ASK_TOKEN || "").trim(),
     adminSessionSecret,
     adminPasswordHash,
     enableApiDocs: (process.env.ENABLE_API_DOCS ?? "false").toLowerCase() === "true",

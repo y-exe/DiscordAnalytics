@@ -326,7 +326,7 @@ export function wizardView(
       menu.addSeparatorComponents(new SeparatorBuilder());
       menu.addTextDisplayComponents(
         text(
-          `**${uiEmoji.warning} ドメインを削除**\n選んだドメインの登録を削除します (そのURLにアクセスできなくなります)。標準サブドメインは次回 /setup 時に自動で再登録されます。`,
+          `**${uiEmoji.warning} ドメインを削除**\n選んだドメインの登録を削除します (そのURLにアクセスできなくなります)。標準サブドメインは削除できません。`,
         ),
       );
       menu.addActionRowComponents(domainRemoveSelect(config));
@@ -776,7 +776,7 @@ export function domainsView(
     menu.addSeparatorComponents(new SeparatorBuilder());
     menu.addTextDisplayComponents(
       text(
-        `**${uiEmoji.warning} ドメインを削除**\n選んだドメインの登録を削除します (そのURLにアクセスできなくなります)。`,
+        `**${uiEmoji.warning} ドメインを削除**\n選んだドメインの登録を削除します (そのURLにアクセスできなくなります)。標準サブドメイン (\`[サーバーID].${SUBDOMAIN_BASE_DOMAIN}\`) は削除できません。`,
       ),
     );
     menu.addActionRowComponents(domainRemoveSelect(config));
@@ -789,22 +789,29 @@ export function domainsView(
 function domainRemoveSelect(
   config: GuildConfigWithDisplay,
 ): ActionRowBuilder<StringSelectMenuBuilder> {
+  // 標準サブドメイン ([サーバーID].base) はCNAME先・バックリンクで必須のため削除不可
+  const standard = buildSubdomain(config.guildId);
   const options = config.domains.slice(0, SELECT_MAX).map((domain) =>
     new StringSelectMenuOptionBuilder()
       .setLabel(domain.slice(0, 100))
       .setValue(domain)
       .setDescription(
-        config.primaryDomains.includes(domain) ? "代表ドメイン" : "登録を削除します",
+        domain === standard
+          ? "標準サブドメイン (削除不可)"
+          : config.primaryDomains.includes(domain)
+            ? "代表ドメイン"
+            : "登録を削除します",
       ),
   );
-  return new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
-    new StringSelectMenuBuilder()
-      .setCustomId(cid.sel("domainremove"))
-      .setPlaceholder("削除するドメインを選択")
-      .setMinValues(1)
-      .setMaxValues(Math.min(SELECT_MAX, options.length))
-      .addOptions(options),
-  );
+  return new ActionRowBuilder<StringSelectMenuBuilder>()
+    .addComponents(
+      new StringSelectMenuBuilder()
+        .setCustomId(cid.sel("domainremove"))
+        .setPlaceholder("削除するドメインを選択")
+        .setMinValues(1)
+        .setMaxValues(Math.min(SELECT_MAX, options.length))
+        .addOptions(options),
+    );
 }
 
 /** 招待コードを選ぶプルダウン。先頭に「カスタム招待コード」を置く */
@@ -884,7 +891,7 @@ function customModal(page?: number): ModalBuilder {
     new LabelBuilder()
       .setLabel("登録する独自ドメイン (例: dashboard.example.com)")
       .setDescription(
-        `事前にDNSへ CNAME → [サーバーID].${SUBDOMAIN_BASE_DOMAIN} または A → ${SERVER_PUBLIC_IP} を向けてください。未反映でも登録はできます (後から再度登録して確認)。`,
+        `事前にDNSへ CNAME → [サーバーID].${SUBDOMAIN_BASE_DOMAIN} を向けてください。未反映でも登録はできます (後から再度登録して確認)。`,
       )
       .setTextInputComponent(
         new TextInputBuilder()
@@ -904,8 +911,6 @@ function customModal(page?: number): ModalBuilder {
 export const SUBDOMAIN_BASE_DOMAIN = (
   process.env.SUBDOMAIN_BASE_DOMAIN || "yexe.top"
 ).toLowerCase();
-/** 独自ドメインのDNS確認先となるVPSの公開IP */
-export const SERVER_PUBLIC_IP = process.env.SERVER_PUBLIC_IP || "162.43.78.145";
 
 /** サブドメインラベルを検証する。招待コードはケースセンシティブなため小文字化は行わない */
 export function normalizeSubdomainLabel(raw: string): string | null {
@@ -1043,30 +1048,6 @@ async function registerInviteSubdomain(
   const domain = buildSubdomain(label);
   const conflict = await upsertGuildDomain(pool, guildId, domain, "invite", label);
   return conflict ?? subdomainResult(domain, "招待コード");
-}
-
-async function resolveToServerIp(hostname: string): Promise<boolean> {
-  const dns = await import("node:dns/promises");
-  try {
-    const a = await dns.resolve4(hostname).catch(() => [] as string[]);
-    if (a.includes(SERVER_PUBLIC_IP)) return true;
-  } catch {
-    /* レコードなし */
-  }
-  try {
-    const cname = await dns.resolveCname(hostname).catch(() => [] as string[]);
-    for (const target of cname) {
-      // 独自ドメイン → CNAME → [サーバーID].yexe.top (ワイルドカード) のチェーンを許容する
-      if (target === SUBDOMAIN_BASE_DOMAIN || target.endsWith(`.${SUBDOMAIN_BASE_DOMAIN}`)) {
-        return true;
-      }
-      const a = await dns.resolve4(target).catch(() => [] as string[]);
-      if (a.includes(SERVER_PUBLIC_IP)) return true;
-    }
-  } catch {
-    /* レコードなし */
-  }
-  return false;
 }
 
 /** ドメインのDNSゾーン名をNSレコードから特定する (見つからなければnull) */
@@ -1558,18 +1539,32 @@ export function loadSetup(client: Client, pool: Pool): void {
             await renderOrUpdate(interaction, "main", staleNotice);
             return;
           }
-          // 登録済みドメインの削除
+          // 登録済みドメインの削除 (標準サブドメインはCNAME先で必須のため削除不可)
           if (action === "domainremove") {
-            const domains = [...interaction.values];
-            if (domains.length === 0) return;
+            const requested = [...interaction.values];
+            if (requested.length === 0) return;
+            const standard = buildSubdomain(interaction.guildId);
+            const domains = requested.filter((domain) => domain !== standard);
+            if (domains.length === 0) {
+              await renderOrUpdate(
+                interaction,
+                "domains",
+                `**https://${standard}** は標準サブドメインのため削除できません (独自ドメインのCNAME先・Botのリンク等で必須です)。`,
+              );
+              return;
+            }
             await pool.query(
-              "DELETE FROM guild_domains WHERE guild_id = $1 AND domain = ANY($2::text[])",
+              "DELETE FROM guild_domains WHERE guild_id = $1 AND domain = ANY($2::text[]) AND source <> 'guild'",
               [interaction.guildId, domains],
             );
-            const notice =
+            const skipped = requested.length - domains.length > 0;
+            const removedNotice =
               domains.length === 1
                 ? `**https://${domains[0]}** の登録を削除しました。`
                 : `${domains.length}件のドメイン登録を削除しました。`;
+            const notice = skipped
+              ? `${removedNotice}\n標準サブドメイン (${standard}) は削除できません。`
+              : removedNotice;
             await renderOrUpdate(interaction, "domains", notice);
             return;
           }
