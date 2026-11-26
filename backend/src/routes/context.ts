@@ -47,13 +47,16 @@ export function createRouteHelpers(deps: AppDeps): RouteHelpers {
     const isPrivateChat = channelId === privateChatChannelId && privateChatCategoryIds.length > 0;
 
     if (isPrivateChat) {
-      // 集約カテゴリ配下の全チャンネル (スレッド含む) をスコープにする
+      // 集約対象: 個別表示カテゴリ (privateChatCategoryIds) "以外" のチャンネル
       const { rows } = await pool.query(
         `
         SELECT channel_id
         FROM channels
         WHERE guild_id = $2 AND is_active = TRUE
-          AND category_id = ANY($1::bigint[])
+          AND (
+              (category_id IS NULL AND category_name = '未分類')
+              OR (category_id IS NOT NULL AND NOT (category_id = ANY($1::bigint[])))
+          )
         `,
         [privateChatCategoryIds, guild.guildId],
       );

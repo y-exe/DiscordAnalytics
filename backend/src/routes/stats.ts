@@ -398,9 +398,9 @@ export function register(app: Hono<AppEnv>, h: RouteHelpers): void {
         ? `
       SELECT
           CASE
-              WHEN c.category_id = ANY($3::bigint[]) THEN $5::text
-              ELSE
+              WHEN c.category_id = ANY($3::bigint[]) THEN
                   (CASE WHEN c.name LIKE '% / %' THEN btrim(split_part(c.name, '/', 1)) ELSE c.name END)
+              ELSE $5::text
           END AS name,
           count(*) AS count
       FROM messages m
@@ -467,9 +467,9 @@ export function register(app: Hono<AppEnv>, h: RouteHelpers): void {
         ? `
       SELECT
           CASE
-              WHEN c.category_id = ANY($1::bigint[]) THEN ${labelParam}
-              ELSE
+              WHEN c.category_id = ANY($1::bigint[]) THEN
                   (CASE WHEN c.name LIKE '% / %' THEN btrim(split_part(c.name, '/', 1)) ELSE c.name END)
+              ELSE ${labelParam}
           END AS name,
           count(*) AS count
       FROM messages m

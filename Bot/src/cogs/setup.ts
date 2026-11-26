@@ -375,7 +375,7 @@ export function wizardView(
       new ActionRowBuilder<ChannelSelectMenuBuilder>().addComponents(
         new ChannelSelectMenuBuilder()
           .setCustomId(cid.sel("privatecats", 1))
-          .setPlaceholder("集約するカテゴリを選択")
+          .setPlaceholder("個別表示するカテゴリを選択 (未選択は総合に合算)")
           .setMinValues(0)
           .setMaxValues(SELECT_MAX)
           .setChannelTypes(...CATEGORY_CHANNEL_TYPES),
@@ -547,7 +547,7 @@ export function privateView(
   const settings = readDisplaySettings(config);
   const cats = settings.privateChatCategoryIds;
   const menu = headingCard(
-    `## ${uiEmoji.content} その他チャンネルの集約 (Webサイト)\n指定したカテゴリ配下のチャンネルを、Webサイトでは**「${settings.privateChatLabel}総合」**の1つにまとめて表示します。\n**集約カテゴリ (${cats.length}件)**\n${bulletList(cats, (id) => `<#${id}>`)}\n**表示名**: 「${settings.privateChatLabel}」`,
+    `## ${uiEmoji.content} その他チャンネルの集約 (Webサイト)\n**選択していない**カテゴリ配下のチャンネルを、Webサイトでは**「${settings.privateChatLabel}総合」**の1つにまとめて表示します。\n個別表示したいカテゴリを選択してください。\n**個別表示カテゴリ (${cats.length}件)**\n${bulletList(cats, (id) => `<#${id}>`)}\n**表示名**: 「${settings.privateChatLabel}」`,
     null,
   );
   menu.addSeparatorComponents(new SeparatorBuilder());
@@ -556,7 +556,7 @@ export function privateView(
     new ActionRowBuilder<ChannelSelectMenuBuilder>().addComponents(
       new ChannelSelectMenuBuilder()
         .setCustomId(cid.sel("privatecats"))
-        .setPlaceholder("集約するカテゴリを追加")
+        .setPlaceholder("個別表示するカテゴリを追加")
         .setMinValues(1)
         .setMaxValues(SELECT_MAX)
         .setChannelTypes(...CATEGORY_CHANNEL_TYPES),
@@ -564,7 +564,7 @@ export function privateView(
   );
   if (cats.length > 0) {
     menu.addActionRowComponents(
-      channelRemoveSelect("privatecatsremove", "選択したカテゴリの集約を解除", cats, nameOf),
+      channelRemoveSelect("privatecatsremove", "選択したカテゴリを総合に合算", cats, nameOf),
     );
     menu.addActionRowComponents(
       row(
@@ -577,7 +577,7 @@ export function privateView(
   }
   menu.addTextDisplayComponents(
     text(
-      "-# 集約中のチャンネルはWebサイトのチャンネル一覧から消えます (発言数はそのまま合算されます)。",
+      "-# 個別表示カテゴリ配下以外のチャンネルは一覧から消え、発言数は総合に合算されます。",
     ),
   );
   return [menu];

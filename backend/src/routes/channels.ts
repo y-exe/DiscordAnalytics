@@ -66,25 +66,17 @@ export function register(app: Hono<AppEnv>, h: RouteHelpers): void {
       [guild.guildId],
     );
 
-    const {
-      whitelistChannelIds,
-      hiddenChannelIds,
-      privateChatLabel,
-      privateChatCategoryIds,
-      bottomChannelCategoryIds,
-    } = guild.displayConfig;
+    const { whitelistChannelIds, hiddenChannelIds, privateChatLabel, bottomChannelCategoryIds } =
+      guild.displayConfig;
     const whitelist = new Set(whitelistChannelIds);
     const hidden = new Set(hiddenChannelIds);
     const bottomCategories = new Set(bottomChannelCategoryIds);
-    const privateCats = new Set(privateChatCategoryIds);
-    const isAggregated = (row: Record<string, unknown>) =>
-      row.category_id !== null && privateCats.has(String(row.category_id));
-    // ホワイトリスト設定時はそのチャンネルのみ、未設定時は全チャンネルから非表示指定を除く。
-    // 集約カテゴリ配下のチャンネルは一覧から除外する
+    // ホワイトリスト設定時はそのチャンネルのみ、未設定時は全チャンネルから非表示指定を除く
+    // (集約カテゴリ設定時はホワイトリスト外のチャンネルが label総合 に合算される)
     const visibleRows =
       whitelist.size > 0
-        ? rows.filter((row) => whitelist.has(String(row.channel_id)) && !isAggregated(row))
-        : rows.filter((row) => !hidden.has(String(row.channel_id)) && !isAggregated(row));
+        ? rows.filter((row) => whitelist.has(String(row.channel_id)))
+        : rows.filter((row) => !hidden.has(String(row.channel_id)));
     visibleRows.sort((a, b) => {
       const aBottom = a.category_id !== null && bottomCategories.has(String(a.category_id));
       const bBottom = b.category_id !== null && bottomCategories.has(String(b.category_id));
@@ -162,14 +154,17 @@ export function register(app: Hono<AppEnv>, h: RouteHelpers): void {
     const whitelist = new Set(whitelistChannelIds);
     const hidden = new Set(hiddenChannelIds);
     const privateCats = new Set(privateChatCategoryIds);
+    // 集約対象: 個別表示カテゴリ (privateChatCategoryIds) "以外" のチャンネル
     const isAggregated = (row: Record<string, unknown>) =>
-      row.category_id !== null && privateCats.has(String(row.category_id));
+      row.category_id === null
+        ? row.category_name === "未分類"
+        : !privateCats.has(String(row.category_id));
     const isVisible = (row: Record<string, unknown>) =>
       whitelist.size > 0
         ? whitelist.has(String(row.channel_id))
         : !hidden.has(String(row.channel_id));
 
-    // 集約カテゴリ配下の合計 (発言数・ユニークユーザー・文字数)
+    // 集約対象チャンネルの合計 (発言数・ユニークユーザー・文字数)
     const aggregatedTotal = async (start: Date | null, end: Date | null) => {
       if (privateCats.size === 0) return null;
       const params: unknown[] = [guild.guildId, [...privateCats]];
@@ -183,7 +178,11 @@ export function register(app: Hono<AppEnv>, h: RouteHelpers): void {
          FROM messages m
          JOIN channels c ON c.channel_id = m.channel_id
          WHERE m.guild_id = $1 AND m.is_bot = FALSE
-           AND c.guild_id = $1 AND c.is_active = TRUE AND c.category_id = ANY($2::bigint[]) ${periodFilter}`,
+           AND c.guild_id = $1 AND c.is_active = TRUE
+           AND (
+               (c.category_id IS NULL AND c.category_name = '未分類')
+               OR (c.category_id IS NOT NULL AND NOT (c.category_id = ANY($2::bigint[])))
+           ) ${periodFilter}`,
         params,
       );
       const r = rows[0];
