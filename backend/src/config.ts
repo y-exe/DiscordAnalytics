@@ -14,14 +14,16 @@ const BASE_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."
 const PROD_ALLOWED_ORIGINS = ["https://ymkw.top", "https://www.ymkw.top"];
 const DEV_ALLOWED_ORIGINS = ["http://localhost:4321", "http://127.0.0.1:4321"];
 
+/** 追加で許可するオリジン (カンマ区切り)。マルチギルドで独自ドメインを使う場合に設定する */
+function allowedOriginsFromEnv(): string[] {
+  return (process.env.ALLOWED_ORIGINS || "")
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
 // これらのHostはギルドDomainsが未登録でも既定ギルドへフォールバックする (過渡期互換)
-const DEFAULT_GUILD_HOSTS = [
-  "api.ymkw.top",
-  "localhost",
-  "127.0.0.1",
-  "::1",
-  "discord-analytics-backend",
-];
+const DEFAULT_GUILD_HOSTS = ["localhost", "127.0.0.1", "::1", "discord-analytics-backend"];
 
 export interface AIConfig {
   /** DeepSeek APIキー。未設定ならAI機能は無効 (503) */
@@ -286,8 +288,8 @@ export async function loadConfig(options: ConfigLoadOptions = {}): Promise<AppCo
     allowedOrigins:
       (process.env.NODE_ENV ?? (options.inContainer ? "production" : "development")) ===
       "production"
-        ? PROD_ALLOWED_ORIGINS
-        : [...PROD_ALLOWED_ORIGINS, ...DEV_ALLOWED_ORIGINS],
+        ? [...PROD_ALLOWED_ORIGINS, ...allowedOriginsFromEnv()]
+        : [...PROD_ALLOWED_ORIGINS, ...DEV_ALLOWED_ORIGINS, ...allowedOriginsFromEnv()],
     rateLimitWindow: intEnv(process.env.RATE_LIMIT_WINDOW, 10),
     maxRequests: intEnv(process.env.RATE_LIMIT_MAX_REQUESTS, 180),
     botMaxRequests: intEnv(process.env.RATE_LIMIT_BOT_MAX_REQUESTS, 900),

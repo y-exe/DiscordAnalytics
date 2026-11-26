@@ -127,7 +127,7 @@ async function loadGuildById(pool: Pool, guildId: string): Promise<GuildContext 
 
 /**
  * Hostヘッダーからギルド設定を解決する。
- * - 空ホストや既定ホスト (api.ymkw.top 等) は既定ギルドへフォールバック (過渡期互換)
+ * - 空ホストや既定ホスト (DEFAULT_GUILD_HOSTS) は既定ギルドへフォールバック (過渡期互換)
  * - 未登録ホストはnull (呼び出し元が404を返す)
  * - 結果はプロセス内キャッシュ (60秒) される
  */

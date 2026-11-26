@@ -50,7 +50,7 @@ export default async function SummaryPage({ searchParams }: PageProps) {
   const { m } = await searchParams;
   const period = parsePeriod(m);
   const baseUrl = await getGuildBaseUrl();
-  const embedBase = baseUrl ? `${baseUrl}/api` : "https://api.ymkw.top";
+  const embedBase = baseUrl ? `${baseUrl}/api` : `${DEFAULT_SITE_ORIGIN}/api`;
 
   if (period.isAll) {
     const initial = await fetchInitialParts({ isAll: true });

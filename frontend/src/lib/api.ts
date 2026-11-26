@@ -7,10 +7,10 @@ const API_URL =
   SAME_ORIGIN || DEV_PROXY
     ? "/api"
     : process.env.NEXT_PUBLIC_API_URL ||
-      (process.env.NODE_ENV === "development" ? "" : "https://api.ymkw.top");
+      (process.env.NODE_ENV === "development" ? "" : "/api");
 const SSR_API_URL = SAME_ORIGIN
-  ? process.env.API_URL || "http://discord-analytics-backend:8070"
-  : process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || "https://api.ymkw.top";
+  ? process.env.API_URL || "http://127.0.0.1:4321/api"
+  : process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:4321/api";
 
 interface FetchAPIOptions extends Omit<RequestInit, "signal"> {
   timeout?: number;

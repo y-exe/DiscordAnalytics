@@ -2,7 +2,8 @@ import { fetchAPI } from "./api";
 
 /** ドメイン解決に失敗した時 (ビルド時等) のサイト既定URL。
  * 実運用ドメインはバックエンドのguild-contextが返す値を優先する */
-export const DEFAULT_SITE_ORIGIN = "https://yexe.top";
+export const DEFAULT_SITE_ORIGIN =
+  process.env.NEXT_PUBLIC_DEFAULT_ORIGIN || "https://yexe.top";
 
 export interface GuildContextInfo {
   guildId: string;
