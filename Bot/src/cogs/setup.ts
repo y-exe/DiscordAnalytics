@@ -576,9 +576,7 @@ export function privateView(
     menu.addActionRowComponents(backRow());
   }
   menu.addTextDisplayComponents(
-    text(
-      "-# 個別表示カテゴリ配下以外のチャンネルは一覧から消え、発言数は総合に合算されます。",
-    ),
+    text("-# 個別表示カテゴリ配下以外のチャンネルは一覧から消え、発言数は総合に合算されます。"),
   );
   return [menu];
 }

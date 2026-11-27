@@ -96,7 +96,6 @@ export default function MemberDetailView({
 }) {
   const [data, setData] = useState<Insights | null>(null);
   const [prevData, setPrevData] = useState<Insights | null>(null);
-  const [failed, setFailed] = useState(false);
 
   const base = period.isAll
     ? `/users/${userId}/insights/total`
@@ -112,7 +111,6 @@ export default function MemberDetailView({
     let cancelled = false;
     setData(null);
     setPrevData(null);
-    setFailed(false);
     // 本体を先に取得して表示し、前期間比 (delta) はその後に取得する
     const loadBase = async () => {
       try {
@@ -122,7 +120,7 @@ export default function MemberDetailView({
         const body = (await res.json()) as Insights;
         if (!cancelled) setData(body);
       } catch {
-        if (!cancelled) setFailed(true);
+        // 失敗時のリダイレクトは fetchAPI 側で処理済み
       }
     };
     const loadPrev = async () => {
@@ -196,7 +194,7 @@ export default function MemberDetailView({
 
   // 初回読み込み中はカード構成 (タイトル等) を維持し、値とグラフだけスケルトンにする。
   // 失敗時も同じ構成のまま「—」等を表示して崩れないようにする
-  const loading = !data && !failed;
+  const loading = !data;
 
   // 読み込み中はシェル最上部の共通バーを出す
   usePendingBar(loading);
@@ -220,12 +218,6 @@ export default function MemberDetailView({
           subtitle="メンバーの行動や好みをより詳しく把握しましょう！"
           right={<PeriodPicker period={period} />}
         />
-
-        {failed && (
-          <div className="app-card-padded text-sm text-muted-foreground">
-            データの読み込みに失敗しました。時間をおいて再読み込みしてください。
-          </div>
-        )}
 
         <div className="grid grid-cols-1 items-stretch gap-4 lg:grid-cols-2">
           <div className="app-card overflow-hidden">
@@ -259,9 +251,7 @@ export default function MemberDetailView({
               {loading ? (
                 <div className={sk("h-[300px] rounded-xl")} />
               ) : (
-                <p className="py-10 text-center text-sm text-muted-foreground">
-                  データの読み込みに失敗しました。
-                </p>
+                <div className={sk("h-[300px] rounded-xl")} />
               )}
             </div>
           }
@@ -283,9 +273,7 @@ export default function MemberDetailView({
                 {loading ? (
                   <div className={sk("h-[280px] rounded-xl")} />
                 ) : (
-                  <p className="py-10 text-center text-sm text-muted-foreground">
-                    データの読み込みに失敗しました。
-                  </p>
+                  <div className={sk("h-[280px] rounded-xl")} />
                 )}
               </div>
             }
@@ -299,9 +287,7 @@ export default function MemberDetailView({
                 {loading ? (
                   <div className="skeleton h-[180px] w-[180px] rounded-full" />
                 ) : (
-                  <p className="py-10 text-center text-sm text-muted-foreground">
-                    データの読み込みに失敗しました。
-                  </p>
+                  <div className={sk("h-[280px] rounded-xl")} />
                 )}
               </div>
             </div>
@@ -314,9 +300,7 @@ export default function MemberDetailView({
                 {loading ? (
                   <div className={sk("h-[280px] rounded-xl")} />
                 ) : (
-                  <p className="py-10 text-center text-sm text-muted-foreground">
-                    データの読み込みに失敗しました。
-                  </p>
+                  <div className={sk("h-[280px] rounded-xl")} />
                 )}
               </div>
             }
@@ -338,9 +322,7 @@ export default function MemberDetailView({
                 {loading ? (
                   <div className={sk("h-[280px] rounded-xl")} />
                 ) : (
-                  <p className="py-10 text-center text-sm text-muted-foreground">
-                    データの読み込みに失敗しました。
-                  </p>
+                  <div className={sk("h-[280px] rounded-xl")} />
                 )}
               </div>
             }
@@ -367,9 +349,7 @@ export default function MemberDetailView({
                   {loading ? (
                     <div className={sk("h-[200px] rounded-xl")} />
                   ) : (
-                    <p className="py-10 text-center text-sm text-muted-foreground">
-                      データの読み込みに失敗しました。
-                    </p>
+                    <div className={sk("h-[200px] rounded-xl")} />
                   )}
                 </div>
               }

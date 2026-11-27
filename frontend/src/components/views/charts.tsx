@@ -3,17 +3,42 @@
 /**
  * EasyUI (https://easyui.site) ラッパー群。
  * サマリー / チャンネル / メンバーの各ビューで共通利用する。
+ *
+ * チャート本体 (framer-motion依存を含む) は next/dynamic で遅延読み込みする。
+ * カード側は ready判定のスケルトンを先に出すため、チャンク取得中も崩れない。
  */
 
-import { ActivityHeatmap } from "@/components/ui/easyui/ActivityHeatmap";
-import { BarChart } from "@/components/ui/easyui/BarChart";
-import { DonutChart } from "@/components/ui/easyui/DonutChart";
-import { InteractiveAreaChart, type ChartPoint } from "@/components/ui/easyui/InteractiveAreaChart";
+import dynamic from "next/dynamic";
+import type { ComponentProps } from "react";
+import type { ChartPoint } from "@/components/ui/easyui/InteractiveAreaChart";
+
+export type { ChartPoint };
 
 export const CHART_ACCENT = "#3964fe";
 
 const jaNum = new Intl.NumberFormat("ja-JP");
 const jaCompact = new Intl.NumberFormat("ja-JP", { notation: "compact", maximumFractionDigits: 1 });
+
+function chartSkeleton(height?: number) {
+  return <div className="skeleton w-full rounded-xl" style={{ height: height ?? 220 }} />;
+}
+
+const LazyActivityHeatmap = dynamic(
+  () => import("@/components/ui/easyui/ActivityHeatmap").then((m) => m.ActivityHeatmap),
+  { loading: () => chartSkeleton(220) },
+);
+const LazyBarChart = dynamic(
+  () => import("@/components/ui/easyui/BarChart").then((m) => m.BarChart),
+  { loading: () => chartSkeleton(260) },
+);
+const LazyDonutChart = dynamic(
+  () => import("@/components/ui/easyui/DonutChart").then((m) => m.DonutChart),
+  { loading: () => chartSkeleton(220) },
+);
+const LazyInteractiveAreaChart = dynamic(
+  () => import("@/components/ui/easyui/InteractiveAreaChart").then((m) => m.InteractiveAreaChart),
+  { loading: () => chartSkeleton(260) },
+);
 
 /* ------------------------------ 日別の発言数推移 ------------------------------ */
 
@@ -35,7 +60,7 @@ export function DailyTrendChart({
     return <p className="py-10 text-center text-sm text-muted-foreground">データがありません</p>;
   }
   return (
-    <InteractiveAreaChart
+    <LazyInteractiveAreaChart
       data={{ 発言数: points }}
       showHeader={false}
       fill={fill}
@@ -61,7 +86,7 @@ export function CategoryBarChart({
   unit?: string;
 }) {
   return (
-    <BarChart
+    <LazyBarChart
       data={data}
       series={[{ key: "value", label: "発言数", color: CHART_ACCENT }]}
       height={height}
@@ -90,7 +115,7 @@ export function ActivityHeatChart({
         <p className="text-sm font-black text-foreground">時間帯別アクティビティ</p>
         <p className="mt-0.5 text-xs font-bold text-muted-foreground">曜日 × 時間帯の発言集中度</p>
       </div>
-      <ActivityHeatmap
+      <LazyActivityHeatmap
         mode="hours"
         matrix={matrix}
         rowLabels={["日", "月", "火", "水", "木", "金", "土"]}
@@ -125,19 +150,20 @@ export function ChannelShareDonut({
   if (data.length === 0) {
     return <p className="py-10 text-center text-sm text-muted-foreground">データがありません</p>;
   }
+  const props = {
+    data,
+    size,
+    thickness: 18,
+    centerLabel: "合計",
+    formatValue: (n: number) => `${jaNum.format(Math.round(n))}件`,
+    showLegend,
+    /* 凡例あり (ダイアログ) のときはドーナツ+凡例の行を中央寄せにする */
+    className: showLegend ? "justify-center" : "",
+    ariaLabel: "チャンネル別発言シェア",
+  } satisfies ComponentProps<typeof LazyDonutChart>;
   return (
     <div className={showLegend ? "" : "flex justify-center"}>
-      <DonutChart
-        data={data}
-        size={size}
-        thickness={18}
-        centerLabel="合計"
-        formatValue={(n) => `${jaNum.format(Math.round(n))}件`}
-        showLegend={showLegend}
-        /* 凡例あり (ダイアログ) のときはドーナツ+凡例の行を中央寄せにする */
-        className={showLegend ? "justify-center" : ""}
-        ariaLabel="チャンネル別発言シェア"
-      />
+      <LazyDonutChart {...props} />
     </div>
   );
 }

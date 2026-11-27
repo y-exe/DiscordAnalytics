@@ -2,6 +2,7 @@ import type { Context } from "hono";
 import { getCookie } from "hono/cookie";
 import type { Pool } from "pg";
 import { ADMIN_COOKIE_NAME, isApiClient, verifyAdminSession } from "../adminAuth";
+import { THREAD_NAME_SEPARATOR, aggregatedChannelSqlCondition } from "../channelGrouping";
 import type { AppConfig } from "../config";
 import { normalizeHost, resolveGuildByHost, type GuildContext } from "../guilds";
 import { escapeLike, jsonError } from "../http";
@@ -53,10 +54,7 @@ export function createRouteHelpers(deps: AppDeps): RouteHelpers {
         SELECT channel_id
         FROM channels
         WHERE guild_id = $2 AND is_active = TRUE
-          AND (
-              (category_id IS NULL AND category_name = '未分類')
-              OR (category_id IS NOT NULL AND NOT (category_id = ANY($1::bigint[])))
-          )
+          AND ${aggregatedChannelSqlCondition("channels", "$1::bigint[]")}
         `,
         [privateChatCategoryIds, guild.guildId],
       );
@@ -85,7 +83,7 @@ export function createRouteHelpers(deps: AppDeps): RouteHelpers {
     );
     if (channelRows.length === 0) return [channelId];
 
-    const childPrefix = `${escapeLike(channelRows[0].name as string)} / %`;
+    const childPrefix = `${escapeLike(channelRows[0].name as string)}${THREAD_NAME_SEPARATOR}%`;
     const { rows } = await pool.query(
       `
       SELECT channel_id

@@ -453,14 +453,7 @@ export function loadRanking(client: Client, pool: Pool): () => void {
 
         const targetChannel =
           interaction.channel && "send" in interaction.channel ? interaction.channel : null;
-        await runRankingLogic(
-          client,
-          pool,
-          year,
-          month,
-          interaction.guildId,
-          targetChannel,
-        );
+        await runRankingLogic(client, pool, year, month, interaction.guildId, targetChannel);
         return;
       }
 

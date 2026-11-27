@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { headers } from "next/headers";
 import ButtonRipple from "@/components/shell/ButtonRipple";
 import ThemeProvider from "@/components/ThemeProvider";
 import { DEFAULT_SITE_ORIGIN, getGuildBaseUrl, getGuildContext } from "@/lib/guild-context";
@@ -46,6 +47,8 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
   const appleIcon = guild.iconUrl ? "/guild-icon?s=180" : null;
   const baseUrl = (await getGuildBaseUrl()) ?? DEFAULT_SITE_ORIGIN;
   const siteName = guild.name ? `${guild.name} ダッシュボード` : "Discord Analytics";
+  // proxy.tsが生成したCSP nonce (next-themesのインラインスクリプトへ付与)
+  const nonce = (await headers()).get("x-nonce") ?? undefined;
 
   return (
     <html lang="ja" suppressHydrationWarning>
@@ -83,7 +86,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
       </head>
       <body className="bg-background text-foreground font-sans min-h-screen">
         <ButtonRipple />
-        <ThemeProvider>{children}</ThemeProvider>
+        <ThemeProvider nonce={nonce}>{children}</ThemeProvider>
       </body>
     </html>
   );

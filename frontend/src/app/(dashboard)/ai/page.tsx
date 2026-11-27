@@ -13,5 +13,7 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export default async function AIPage() {
   const guild = await getGuildContext();
-  return <AIChatView guildId={guild.guildId} guildIcon={guild.iconUrl} />;
+  return (
+    <AIChatView guildId={guild.guildId} guildIcon={guild.iconUrl ? `/guild-icon?s=128` : null} />
+  );
 }

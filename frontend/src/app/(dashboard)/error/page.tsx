@@ -41,11 +41,22 @@ export default async function ErrorStatusPage({
   const { code, msg, path } = await searchParams;
   const safeCode = code && /^\d{3}$/.test(code) ? code : "500";
   const title = TITLES[safeCode] ?? (msg || "Error");
+  // サーバー発のエラーID (error_id) を表示する。ユーザーがこれを報告すれば
+  // 運用側はサーバーログを同じIDで引ける。表示は英数字と記号の一部に限定。
+  const errorId =
+    msg && typeof msg === "string" ? (msg.match(/error_id:\s*([0-9a-f]{8})/) ?? [])[1] : undefined;
   return (
     <StatusPage
       code={safeCode}
       title={title}
       message={overloadMessage(safeCode)}
+      extra={
+        errorId ? (
+          <p className="font-mono text-xs text-muted-foreground">
+            エラーID: <span className="select-all">{errorId}</span>
+          </p>
+        ) : undefined
+      }
       chipPath={safePath(path) ?? "/error"}
       actions={[{ label: "ホームに戻る", href: "/" }]}
     />

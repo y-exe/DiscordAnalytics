@@ -98,7 +98,8 @@ const CARD_PARTS: Record<string, PartKey[]> = {
   "kpi-chars": ["history", "analysis"],
   "kpi-avg-day": ["history", "analysis"],
   "kpi-avg-chars": ["history", "analysis"],
-  "kpi-peak": ["heatmap"],
+  // ピーク時間帯の値 (max_hour) は analysis に入っているためヒートマップ単独では出せない
+  "kpi-peak": ["heatmap", "analysis"],
   "kpi-channel": ["channels"],
   "kpi-active-days": ["history"],
   heatmap: ["heatmap"],
@@ -228,10 +229,6 @@ export default function SummaryView({
     }),
     [parts],
   );
-  /** 全データ区分が失敗したときだけ全体のエラーバナーを出す */
-  const failedEverything = (
-    ["ranking", "history", "analysis", "heatmap", "channels"] as PartKey[]
-  ).every((key) => failedParts[key] === true);
 
   useEffect(() => {
     let cancelled = false;
@@ -552,12 +549,6 @@ export default function SummaryView({
       />
 
       {/* 読み込み中はシェル最上部の共通バーを出す (usePendingBarで登録済み) */}
-      {/* 主要データが全て失敗したときだけ全体のエラーバナーを出す (カードはスケルトン構成のまま維持) */}
-      {failedEverything && (
-        <div className="app-card-padded text-sm text-muted-foreground">
-          データの読み込みに失敗しました。時間をおいて再読み込みしてください。
-        </div>
-      )}
 
       {/* ポップアップ用データの取得中でも操作は妨げない (薄める/ロックしない) */}
       <div className="transition-opacity duration-200 opacity-100">

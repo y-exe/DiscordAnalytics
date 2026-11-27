@@ -19,14 +19,50 @@ export function parsePeriod(raw: string | null | undefined, fallback?: Period): 
   if (raw === "all") return { key: "all", year: null, month: null, isAll: true };
   if (raw && /^\d{4}-(0?[1-9]|1[0-2])$/.test(raw)) {
     const [year, month] = raw.split("-").map(Number);
-    return { key: `${year}-${month}`, year, month, isAll: false };
+    // 正規形はゼロ埋め (2026-9 と 2026-09 が別URLにならないように)
+    return { key: `${year}-${String(month).padStart(2, "0")}`, year, month, isAll: false };
   }
   return fallback ?? defaultPeriod();
 }
 
+/** URLの m パラメータとして正規 (そのまま使える) か */
+export function isCanonicalPeriodParam(m: string): boolean {
+  return m === "all" || /^\d{4}-(0[1-9]|1[0-2])$/.test(m);
+}
+
+/**
+ * m パラメータが正規形でない場合のリダイレクト先 (正規形に書き直したURL)。
+ * 正規形 (または指定なし) の場合は null。不正値は既定期間へ落とす。
+ */
+export function canonicalPeriodRedirect(
+  m: string | undefined,
+  buildPath: (period: Period) => string,
+): string | null {
+  if (m === undefined) return null;
+  if (isCanonicalPeriodParam(m)) return null;
+  const period = parsePeriod(m);
+  return buildPath(period);
+}
+
+/** ページのcanonicalパス。既定期間はクエリなし、月別はゼロ埋め ?m=、全期間は ?m=all */
+export function canonicalPeriodPath(
+  pathname: string,
+  period: Period,
+  defaultKey = defaultPeriod().key,
+): string {
+  if (period.isAll) return `${pathname}?m=all`;
+  if (period.key === defaultKey) return pathname;
+  return `${pathname}?m=${period.key}`;
+}
+
 export function defaultPeriod(): Period {
   const { year, month } = latestPublishedMonth();
-  return { key: `${year}-${month}`, year, month, isAll: false };
+  return {
+    key: `${year}-${String(month).padStart(2, "0")}`,
+    year,
+    month,
+    isAll: false,
+  };
 }
 
 export function periodLabel(period: Period): string {
@@ -69,7 +105,7 @@ export function recentMonths(
     list.push({
       year: d.getUTCFullYear(),
       month: d.getUTCMonth() + 1,
-      key: `${d.getUTCFullYear()}-${d.getUTCMonth() + 1}`,
+      key: `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`,
     });
   }
   return list;

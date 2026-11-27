@@ -25,7 +25,6 @@ export default function ChannelsView({
   period: { key: string; year: number | null; month: number | null; isAll: boolean };
 }) {
   const [data, setData] = useState<ChannelStat[] | null>(null);
-  const [failed, setFailed] = useState(false);
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<string | null>(null);
 
@@ -36,16 +35,14 @@ export default function ChannelsView({
   useEffect(() => {
     let cancelled = false;
     setData(null);
-    setFailed(false);
+    // 失敗時は fetchAPI がエラーコードページへリダイレクトする (ここではスケルトンのまま)
     fetchAPI(base, { retries: 1 })
       .then(async (res) => {
         if (!res.ok) throw new Error(String(res.status));
         const body = (await res.json()) as ChannelStat[];
         if (!cancelled) setData(body);
       })
-      .catch(() => {
-        if (!cancelled) setFailed(true);
-      });
+      .catch(() => {});
     return () => {
       cancelled = true;
     };
@@ -102,11 +99,7 @@ export default function ChannelsView({
           </div>
         </div>
 
-        {failed ? (
-          <p className="p-8 text-center text-sm text-muted-foreground">
-            データの読み込みに失敗しました。
-          </p>
-        ) : !data ? (
+        {!data ? (
           <div className="space-y-2 p-4">
             {Array.from({ length: 8 }, (_, i) => (
               <div key={i} className="h-9 animate-pulse rounded-lg bg-muted" />

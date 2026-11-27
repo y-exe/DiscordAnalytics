@@ -1,5 +1,5 @@
 import type { CSSProperties } from "react";
-import { paletteColor, type DiscordIdentity } from "@/lib/discord-assets";
+import { paletteColor, proxiedDiscordUrl, type DiscordIdentity } from "@/lib/discord-assets";
 
 export type { DiscordIdentity };
 import { Avatar } from "../RankTopCard";
@@ -28,7 +28,7 @@ export function UserAvatar({
       />
       {user.avatar_decoration && (
         <img
-          src={user.avatar_decoration}
+          src={proxiedDiscordUrl(user.avatar_decoration) ?? undefined}
           alt=""
           aria-hidden="true"
           className="pointer-events-none absolute left-1/2 top-1/2 max-w-none -translate-x-1/2 -translate-y-1/2"
@@ -47,7 +47,7 @@ export function nameplateBackgroundStyle(
   const color = paletteColor(nameplate.palette);
   return {
     backgroundColor: `${color}44`,
-    backgroundImage: `url(${nameplate.asset})`,
+    backgroundImage: `url(${proxiedDiscordUrl(nameplate.asset)})`,
     backgroundSize: "auto 100%",
     backgroundRepeat: "no-repeat",
     // 画像部分を右端に寄せる (中央配置だと余った部分に色だけの領域が出てしまうため)
@@ -71,7 +71,13 @@ export function ServerTagChip({
       className={`inline-flex h-5 shrink-0 items-center gap-1 whitespace-nowrap rounded-md bg-muted px-1.5 align-middle ${className}`}
       title={`サーバータグ: ${tag}`}
     >
-      {badge && <img src={badge} alt="" className="h-3 w-3 shrink-0 object-contain" />}
+      {badge && (
+        <img
+          src={proxiedDiscordUrl(badge) ?? undefined}
+          alt=""
+          className="h-3 w-3 shrink-0 object-contain"
+        />
+      )}
       <span className="text-xs font-bold leading-none text-foreground">{tag}</span>
     </span>
   );

@@ -11,7 +11,12 @@ import PageToolbar from "@/components/shell/PageToolbar";
 import PeriodPicker from "@/components/shell/PeriodPicker";
 import { BoostBadge, ServerTagChip, UserAvatar } from "./discord/DiscordIdentity";
 import { fetchAPI } from "@/lib/api";
-import { formatDiscordDate, profileBannerStyle, snowflakeToDate } from "@/lib/discord-assets";
+import {
+  formatDiscordDate,
+  profileBannerStyle,
+  proxiedDiscordUrl,
+  snowflakeToDate,
+} from "@/lib/discord-assets";
 import { periodLabel } from "@/lib/period";
 
 interface GraphNode {
@@ -72,9 +77,10 @@ function seededRandom(seed: number): () => number {
 function avatarForGraph(url: string | null | undefined, renderSize: number): string {
   // 大きく表示されるアイコンほど高解像度で取得する
   const wanted = renderSize >= 16 ? 256 : renderSize >= 8 ? 128 : 64;
-  if (!url) return "";
-  if (url.includes("size=")) return url.replace(/size=\d+/, "size=" + wanted);
-  return url.includes("?") ? url + "&size=" + wanted : url + "?size=" + wanted;
+  const proxied = proxiedDiscordUrl(url);
+  if (!proxied) return "";
+  if (proxied.includes("size=")) return proxied.replace(/size=\d+/, "size=" + wanted);
+  return proxied.includes("?") ? proxied + "&size=" + wanted : proxied + "?size=" + wanted;
 }
 
 const CROP_SIZE = 96;
@@ -217,7 +223,6 @@ export default function RelationGraphView({
   const isDark = resolvedTheme === "dark";
 
   const [data, setData] = useState<{ nodes: GraphNode[]; edges: GraphEdge[] } | null>(null);
-  const [failed, setFailed] = useState(false);
   const [layoutRunning, setLayoutRunning] = useState(false);
   const [layoutProgress, setLayoutProgress] = useState(0);
   const [communities, setCommunities] = useState<CommunityInfo[]>([]);
@@ -244,7 +249,6 @@ export default function RelationGraphView({
   useEffect(() => {
     let cancelled = false;
     setData(null);
-    setFailed(false);
     setFocused(null);
 
     // 取得キャッシュ (テーマ切替や行き来した場合の再読み込みを防ぐ)。
@@ -281,7 +285,7 @@ export default function RelationGraphView({
         if (!cancelled) setData(stored);
       })
       .catch(() => {
-        if (!cancelled) setFailed(true);
+        // 失敗時のリダイレクトは fetchAPI 側で処理済み
       });
     return () => {
       cancelled = true;
@@ -826,11 +830,9 @@ export default function RelationGraphView({
         <div className="rounded-xl border border-border bg-card/95 px-3.5 py-2.5 shadow-lg backdrop-blur md:shrink-0">
           <p className="text-sm font-black text-foreground">共通のかかわり</p>
           <p className="mt-0.5 text-xs font-bold text-muted-foreground">
-            {failed
-              ? "データの読み込みに失敗しました。時間をおいて再読み込みしてください。"
-              : !data
-                ? "メンバー関係を読み込み中…"
-                : `${title}にアクティブだったメンバー${data.nodes.length}人 ・ 結び付き${data.edges.length}本`}
+            {!data
+              ? "メンバー関係を読み込み中…"
+              : `${title}にアクティブだったメンバー${data.nodes.length}人 ・ 結び付き${data.edges.length}本`}
           </p>
           <p className="mt-0.5 hidden text-[11px] font-bold text-muted-foreground md:block">
             ドラッグで視点移動 / ホイールでズーム / アイコンをクリックで詳細
@@ -845,16 +847,10 @@ export default function RelationGraphView({
       {!data && (
         <div className="pointer-events-none absolute inset-0 z-10 grid place-items-center">
           <div className="rounded-2xl border border-border bg-card/95 px-6 py-5 shadow-lg">
-            {failed ? (
-              <p className="text-sm font-bold text-muted-foreground">
-                データの読み込みに失敗しました。
-              </p>
-            ) : (
-              <div className="space-y-2.5" aria-hidden="true">
-                <div className="skeleton h-10 w-72 rounded-xl" />
-                <div className="skeleton h-4 w-52 rounded-md" />
-              </div>
-            )}
+            <div className="space-y-2.5" aria-hidden="true">
+              <div className="skeleton h-10 w-72 rounded-xl" />
+              <div className="skeleton h-4 w-52 rounded-md" />
+            </div>
           </div>
         </div>
       )}

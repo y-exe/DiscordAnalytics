@@ -7,12 +7,19 @@ type NextThemesProps = ComponentProps<typeof NextThemesProvider>;
 
 export default function ThemeProvider({
   children,
+  nonce,
   ...props
-}: Pick<NextThemesProps, "attribute" | "defaultTheme" | "enableSystem"> & {
+}: Pick<NextThemesProps, "attribute" | "defaultTheme" | "enableSystem" | "nonce"> & {
   children: ReactNode;
 }) {
   return (
-    <NextThemesProvider attribute="class" defaultTheme="light" enableSystem {...props}>
+    <NextThemesProvider
+      attribute="class"
+      defaultTheme="light"
+      enableSystem
+      nonce={nonce}
+      {...props}
+    >
       {children}
     </NextThemesProvider>
   );

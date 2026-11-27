@@ -47,7 +47,6 @@ export default function MembersView({
   period: { key: string; year: number | null; month: number | null; isAll: boolean };
 }) {
   const [data, setData] = useState<MemberStat[] | null>(null);
-  const [failed, setFailed] = useState(false);
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<SortKey>("messages");
   const [page, setPage] = useState(0);
@@ -55,7 +54,7 @@ export default function MembersView({
   const [pageSize, setPageSize] = useState(10);
 
   // 読み込み中はシェル最上部の共通バーを出す
-  usePendingBar(!data && !failed);
+  usePendingBar(!data);
 
   const base = period.isAll
     ? "/users/members/total"
@@ -64,17 +63,15 @@ export default function MembersView({
   useEffect(() => {
     let cancelled = false;
     setData(null);
-    setFailed(false);
     setPage(0);
+    // 失敗時は fetchAPI がエラーコードページへリダイレクトする (ここではスケルトンのまま)
     fetchAPI(base, { retries: 1 })
       .then(async (res) => {
         if (!res.ok) throw new Error(String(res.status));
         const body = (await res.json()) as MemberStat[];
         if (!cancelled) setData(body);
       })
-      .catch(() => {
-        if (!cancelled) setFailed(true);
-      });
+      .catch(() => {});
     return () => {
       cancelled = true;
     };
@@ -146,18 +143,7 @@ export default function MembersView({
           </div>
         </div>
 
-        {failed ? (
-          <div>
-            <p className="p-6 pb-2 text-center text-sm text-muted-foreground">
-              データの読み込みに失敗しました。時間をおいて再読み込みしてください。
-            </p>
-            <div className="space-y-2 p-4 pt-2" aria-hidden="true">
-              {Array.from({ length: 8 }, (_, i) => (
-                <div key={i} className="skeleton h-9 rounded-lg" />
-              ))}
-            </div>
-          </div>
-        ) : !data ? (
+        {!data ? (
           <div className="space-y-2 p-4" aria-hidden="true">
             {Array.from({ length: 10 }, (_, i) => (
               <div key={i} className="skeleton h-9 rounded-lg" />

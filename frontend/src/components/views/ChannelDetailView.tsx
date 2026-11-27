@@ -378,12 +378,6 @@ export default function ChannelDetailView({
         right={<PeriodPicker period={period} />}
       />
 
-      {failed && (
-        <div className="app-card-padded text-sm text-muted-foreground">
-          データの読み込みに失敗しました。時間をおいて再読み込みしてください。
-        </div>
-      )}
-
       <Reorderable
         resetToken={orderResetToken}
         storageKey={period.isAll ? "layout.channel.all" : "layout.channel.month"}

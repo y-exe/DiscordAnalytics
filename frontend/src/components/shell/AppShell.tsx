@@ -226,7 +226,7 @@ function SidebarBody({
             className="flex items-center gap-3 rounded-xl hover:opacity-80 transition-opacity"
           >
             {guild.iconUrl && (
-              <img src={guild.iconUrl} alt="" className="h-10 w-10 rounded-xl object-cover" />
+              <img src="/guild-icon?s=64" alt="" className="h-10 w-10 rounded-xl object-cover" />
             )}
             <div className="min-w-0">
               <p

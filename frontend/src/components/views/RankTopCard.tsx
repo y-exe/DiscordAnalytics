@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { proxiedDiscordUrl } from "@/lib/discord-assets";
 import {
   NameplateText,
   ServerTagChip,
@@ -32,7 +33,8 @@ export function Avatar({
   // 最後の手段のデフォルトアバターは出さない (仮ロゴより無い方が良いので
   // 全ソースが揃わない場合は画像ごと省略する)
   if (stage === "none") return null;
-  const resolvedSrc = stage === "fallback" ? (fallbackSrc ?? null) : (src ?? fallbackSrc ?? null);
+  // Discord CDN直リンクを避け、同一オリジンのプロキシ経由にする (CSP img-src 'self')
+  const resolvedSrc = proxiedDiscordUrl(stage === "fallback" ? fallbackSrc : (src ?? fallbackSrc));
   if (!resolvedSrc) return null;
   return (
     <img

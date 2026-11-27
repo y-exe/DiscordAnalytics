@@ -1,6 +1,7 @@
 import { Events, type Client, type GuildBasedChannel, type Message } from "discord.js";
 import type { Pool } from "pg";
 import { EXCLUDED_USER_IDS } from "../config";
+import { UNCATEGORIZED_LABEL } from "../../../shared/channel-grouping";
 
 export function describeChannel(channel: GuildBasedChannel): {
   name: string;
@@ -12,7 +13,7 @@ export function describeChannel(channel: GuildBasedChannel): {
   const parent = isThread ? channel.parent : null;
   const category = isThread ? (parent?.parent ?? null) : channel.parent;
 
-  const categoryName = category?.name ?? "未分類";
+  const categoryName = category?.name ?? UNCATEGORIZED_LABEL;
   const categoryId = category?.id ?? null;
   const categoryPosition = category?.position ?? 999;
 

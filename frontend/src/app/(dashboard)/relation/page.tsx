@@ -6,7 +6,7 @@ import {
   socialMetadata,
 } from "@/lib/discord-embed";
 import { DEFAULT_SITE_ORIGIN, getGuildBaseUrl, getGuildContext } from "@/lib/guild-context";
-import { parsePeriod, periodLabel } from "@/lib/period";
+import { canonicalPeriodPath, parsePeriod, periodLabel } from "@/lib/period";
 
 export const dynamic = "force-dynamic";
 
@@ -22,13 +22,14 @@ export async function generateMetadata({ searchParams }: PageProps): Promise<Met
   return socialMetadata({
     title,
     description,
-    url: `${baseUrl ?? DEFAULT_SITE_ORIGIN}/relation`,
+    url: `${baseUrl ?? DEFAULT_SITE_ORIGIN}${canonicalPeriodPath("/relation", period)}`,
     imageUrl: guild.iconUrl,
   });
 }
 
 export default async function RelationPage({ searchParams }: PageProps) {
   const { m } = await searchParams;
+  // 非正形の m は proxy.ts がレンダー前に正規URLへ集約する
   const period = parsePeriod(m);
   const [guild, baseUrl] = await Promise.all([getGuildContext(), getGuildBaseUrl()]);
   const base = baseUrl ?? DEFAULT_SITE_ORIGIN;

@@ -96,6 +96,15 @@ async function main(): Promise<void> {
   };
   process.on("SIGTERM", () => shutdown("SIGTERM"));
   process.on("SIGINT", () => shutdown("SIGINT"));
+
+  // プロセスを落とさずログだけ残す (単一プロセスのダッシュボードのため、
+  // 一時的な例外で全体が死ぬより稼働継続を優先する)
+  process.on("unhandledRejection", (reason) => {
+    console.error(`[backend] Unhandled rejection: ${reason}`);
+  });
+  process.on("uncaughtException", (error) => {
+    console.error(`[backend] Uncaught exception: ${error}`);
+  });
 }
 
 void main();

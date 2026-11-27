@@ -2,6 +2,7 @@ import { cors } from "hono/cors";
 import { getCookie } from "hono/cookie";
 import { Hono } from "hono";
 import type { Context } from "hono";
+import { randomUUID } from "node:crypto";
 import type { Pool } from "pg";
 import {
   ADMIN_COOKIE_NAME,
@@ -23,6 +24,7 @@ import { normalizeHost, resolveGuildByHost, type GuildContext } from "./guilds";
 import { TOTAL_CACHE_WARM_INTERVAL_MS } from "./http";
 import { createRouteHelpers } from "./routes/context";
 import { register as registerAdmin } from "./routes/admin";
+import { register as registerAvatar } from "./routes/avatar";
 import { register as registerAI } from "./routes/ai";
 import { register as registerChannels } from "./routes/channels";
 import { register as registerGraph } from "./routes/graph";
@@ -118,15 +120,13 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
       c.res.headers.set("X-Frame-Options", "DENY");
       return;
     } catch (error) {
-      console.error(`Unhandled exception during request: ${c.req.method} ${path}`, error);
-      return jsonResponse(
-        {
-          detail: "Internal Server Error",
-          error_type: error instanceof Error ? error.constructor.name : typeof error,
-        },
-        500,
-        { "X-Debug-Block": "internal-error" },
-      );
+      // 内部情報 (例外クラス名・スタック) は漏洩させない。相関用の短いIDだけ返し、
+      // 詳細はサーバーログで同じIDを引く。
+      const errorId = randomUUID().slice(0, 8);
+      console.error(`[api:${errorId}] Unhandled exception: ${c.req.method} ${path}`, error);
+      return jsonResponse({ detail: "Internal Server Error", error_id: errorId }, 500, {
+        "X-Debug-Block": "internal-error",
+      });
     }
   });
 
@@ -135,8 +135,9 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
   });
 
   app.onError((error, c) => {
-    console.error(`Unhandled error: ${c.req.method} ${c.req.path}`, error);
-    return jsonResponse({ detail: "Internal Server Error" }, 500);
+    const errorId = randomUUID().slice(0, 8);
+    console.error(`[api:${errorId}] Unhandled error: ${c.req.method} ${c.req.path}`, error);
+    return jsonResponse({ detail: "Internal Server Error", error_id: errorId }, 500);
   });
 
   app.get("/", (c) => plainTextResponse("API is running."));
@@ -161,6 +162,7 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
 
   registerMeta(app, h);
   registerAdmin(app, h);
+  registerAvatar(app, h);
   registerAI(app, h);
   registerChannels(app, h);
   registerUsers(app, h);

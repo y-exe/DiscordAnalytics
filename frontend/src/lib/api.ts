@@ -6,8 +6,7 @@ const DEV_PROXY =
 const API_URL =
   SAME_ORIGIN || DEV_PROXY
     ? "/api"
-    : process.env.NEXT_PUBLIC_API_URL ||
-      (process.env.NODE_ENV === "development" ? "" : "/api");
+    : process.env.NEXT_PUBLIC_API_URL || (process.env.NODE_ENV === "development" ? "" : "/api");
 const SSR_API_URL = SAME_ORIGIN
   ? process.env.API_URL || "http://127.0.0.1:4321/api"
   : process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:4321/api";
@@ -122,12 +121,21 @@ export async function fetchAPI(path: string, options: FetchAPIOptions = {}): Pro
         return res;
       }
       if (res.status === 404) return res;
-      const apiError = new APIError(`HTTP ${res.status}`, res.status, url);
+
+      // 5xxの応答にはエラーID (error_id) が入ることがある。エラーページまで運搬し
+      // ユーザーが報告できるようにする (サーバーログと同じIDで引ける)
+      const apiError = new APIError(await describeHttpError(res), res.status, url);
       lastError = apiError;
 
       if (res.status === 429 || res.status >= 500) {
         if (attempt < retries) {
-          await delay(1000 * Math.pow(2, attempt));
+          // 429はRetry-Afterヘッダーがあればそれを講守する (最長10秒)
+          const retryAfter = Number(res.headers.get("Retry-After"));
+          const waitMs =
+            res.status === 429 && Number.isFinite(retryAfter) && retryAfter > 0
+              ? Math.min(retryAfter * 1000, 10_000)
+              : 1000 * Math.pow(2, attempt);
+          await delay(waitMs);
           continue;
         }
       }
@@ -157,20 +165,41 @@ export async function fetchAPI(path: string, options: FetchAPIOptions = {}): Pro
   throw new Error("Fetch failed after retries");
 }
 
+/** エラーレスポンスからUI向けの短い説明を作る (サーバー発のerror_idがあれば添える) */
+async function describeHttpError(res: Response): Promise<string> {
+  if (res.status < 500) return `HTTP ${res.status}`;
+  try {
+    const body = (await res.clone().json()) as { error_id?: unknown; detail?: unknown };
+    if (body && typeof body === "object") {
+      const detail = typeof body.detail === "string" ? body.detail : "";
+      if (typeof body.error_id === "string" && body.error_id) {
+        return `HTTP ${res.status} (${detail} / error_id: ${body.error_id})`;
+      }
+    }
+  } catch {
+    // JSONでない応答は従来どおり
+  }
+  return `HTTP ${res.status}`;
+}
+
 function redirectToErrorPage(error: Error, isServer: boolean, quiet: boolean): void {
+  // あらゆるAPI失敗 (4xx/5xx/ネットワーク断) をエラーコードページへ集約する。
+  // - quiet (事前取得等のバックグラウンド) は画面遷移させない
+  // - SSR時はリダイレクトできないため、クライアントの再取得で処理される
   if (
     isServer ||
     quiet ||
     typeof window === "undefined" ||
     !(error instanceof APIError) ||
-    error.status < 500
+    window.location.pathname === "/error"
   )
     return;
-  if (window.location.pathname === "/error") return;
 
+  // ネットワーク断 (status 0) は到達不能を意味するため503として扱う
+  const code = error.status >= 400 ? error.status : 503;
   // ページのパスと code/msg をクエリに渡す (内部APIのURLは露出させない)
   const params = new URLSearchParams({
-    code: String(error.status),
+    code: String(code),
     msg: error.message || "Bad Gateway",
     path: window.location.pathname,
   });

@@ -161,29 +161,45 @@ export function startWsServer(): void {
           // awaitを挟む前に同期で確保する (連続メッセージで同時に2チャット走るのを防ぐ)
           data.chat = new AbortController();
 
-          const deps = await chatDeps();
-          const prepared = await prepareAIChat(deps, {
-            guild: data.guild,
-            clientIp: data.clientIp,
-            privileged: data.privileged,
-            message,
-            history,
-          });
-          if (!prepared.ok) {
-            ws.send(
-              JSON.stringify({ type: "error", message: prepared.detail, status: prepared.status }),
-            );
-            return;
-          }
-
-          const controller = data.chat;
+          // 準備・実行のどこで落ちてもスロットを解放し、クライアントにエラーを届ける。
+          // (ここから外れるとこの接続はずっと「処理中」のまま固まる)
           try {
+            const deps = await chatDeps();
+            const prepared = await prepareAIChat(deps, {
+              guild: data.guild,
+              clientIp: data.clientIp,
+              privileged: data.privileged,
+              message,
+              history,
+            });
+            if (!prepared.ok) {
+              ws.send(
+                JSON.stringify({
+                  type: "error",
+                  message: prepared.detail,
+                  status: prepared.status,
+                }),
+              );
+              return;
+            }
+
+            const controller = data.chat;
             await runAIChat(deps, prepared, {
               signal: controller.signal,
               send: (event: ChatEvent) => {
                 if (ws.readyState === 1) ws.send(JSON.stringify(event));
               },
             });
+          } catch (error) {
+            console.error(`[ws] AI chat failed: ${error}`);
+            if (ws.readyState === 1) {
+              ws.send(
+                JSON.stringify({
+                  type: "error",
+                  message: "AIの処理中にエラーが発生しました。少し待ってから再試行してください。",
+                }),
+              );
+            }
           } finally {
             data.chat = null;
           }

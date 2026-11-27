@@ -2,6 +2,12 @@ import type { Context, Hono } from "hono";
 import { getCookie } from "hono/cookie";
 import type { Pool } from "pg";
 import {
+  UNCATEGORIZED_LABEL,
+  aggregatedChannelSqlCondition,
+  buildThreadParentMap,
+  isAggregatedChannelRow,
+} from "../channelGrouping";
+import {
   ADMIN_COOKIE_NAME,
   ADMIN_LOGIN_LIMIT,
   ADMIN_LOGIN_WINDOW,
@@ -97,7 +103,7 @@ export function register(app: Hono<AppEnv>, h: RouteHelpers): void {
       ...visibleRows.map((row) => ({
         id: String(row.channel_id),
         name: row.name as string,
-        category: (row.category_name as string) || "未分類",
+        category: (row.category_name as string) || UNCATEGORIZED_LABEL,
       })),
     ];
 
@@ -145,20 +151,14 @@ export function register(app: Hono<AppEnv>, h: RouteHelpers): void {
       [guild.guildId],
     );
 
-    const {
-      whitelistChannelIds,
-      hiddenChannelIds,
-      privateChatLabel,
-      privateChatCategoryIds,
-    } = guild.displayConfig;
+    const { whitelistChannelIds, hiddenChannelIds, privateChatLabel, privateChatCategoryIds } =
+      guild.displayConfig;
     const whitelist = new Set(whitelistChannelIds);
     const hidden = new Set(hiddenChannelIds);
     const privateCats = new Set(privateChatCategoryIds);
     // 集約対象: 個別表示カテゴリ (privateChatCategoryIds) "以外" のチャンネル
     const isAggregated = (row: Record<string, unknown>) =>
-      row.category_id === null
-        ? row.category_name === "未分類"
-        : !privateCats.has(String(row.category_id));
+      isAggregatedChannelRow(row, privateChatCategoryIds);
     const isVisible = (row: Record<string, unknown>) =>
       whitelist.size > 0
         ? whitelist.has(String(row.channel_id))
@@ -179,30 +179,15 @@ export function register(app: Hono<AppEnv>, h: RouteHelpers): void {
          JOIN channels c ON c.channel_id = m.channel_id
          WHERE m.guild_id = $1 AND m.is_bot = FALSE
            AND c.guild_id = $1 AND c.is_active = TRUE
-           AND (
-               (c.category_id IS NULL AND c.category_name = '未分類')
-               OR (c.category_id IS NOT NULL AND NOT (c.category_id = ANY($2::bigint[])))
-           ) ${periodFilter}`,
+           AND ${aggregatedChannelSqlCondition("c", "$2::bigint[]")} ${periodFilter}`,
         params,
       );
       const r = rows[0];
       return { messages: Number(r.messages), users: Number(r.users), chars: Number(r.chars) };
     };
 
-    // スレッド ("親板 / スレ名" 形式) を親チャンネルへ集約するマッピング
-    const nameToId = new Map<string, string>();
-    for (const row of channelRows as Array<Record<string, unknown>>) {
-      nameToId.set(String(row.name), String(row.channel_id));
-    }
-    const parentIdOf = new Map<string, string>();
-    for (const row of channelRows as Array<Record<string, unknown>>) {
-      const name = String(row.name);
-      const sep = name.indexOf(" / ");
-      if (sep <= 0) continue;
-      const parent = nameToId.get(name.slice(0, sep));
-      if (parent && parent !== String(row.channel_id))
-        parentIdOf.set(String(row.channel_id), parent);
-    }
+    // スレッド («親名 / スレ名» 形式) を親チャンネルへ集約するマッピング
+    const parentIdOf = buildThreadParentMap(channelRows as Array<Record<string, unknown>>);
 
     const aggregate = async (start: Date | null, end: Date | null) => {
       const params: unknown[] = [guild.guildId];
@@ -270,8 +255,7 @@ export function register(app: Hono<AppEnv>, h: RouteHelpers): void {
       ...(aggregatedRow !== null ? [aggregatedRow] : []),
       ...(channelRows as Array<Record<string, unknown>>)
         .filter(
-          (row) =>
-            !parentIdOf.has(String(row.channel_id)) && isVisible(row) && !isAggregated(row),
+          (row) => !parentIdOf.has(String(row.channel_id)) && isVisible(row) && !isAggregated(row),
         )
         .map((row) => {
           const id = String(row.channel_id);
@@ -280,14 +264,12 @@ export function register(app: Hono<AppEnv>, h: RouteHelpers): void {
           return {
             channel_id: id,
             name: row.name as string,
-            category: (row.category_name as string) || "未分類",
+            category: (row.category_name as string) || UNCATEGORIZED_LABEL,
             position: Number(row.position) || 999999,
             messages: current.messages,
             users: current.users,
             chars: current.chars,
-            prev: prev
-              ? { messages: prev.messages, users: prev.users, chars: prev.chars }
-              : null,
+            prev: prev ? { messages: prev.messages, users: prev.users, chars: prev.chars } : null,
           };
         }),
     ].sort((a, b) => b.messages - a.messages || a.position - b.position);
@@ -384,34 +366,20 @@ export function register(app: Hono<AppEnv>, h: RouteHelpers): void {
       return jsonResponse(emptyPayload, 200, headers);
     }
 
-    const nameToId = new Map<string, string>();
-    for (const row of rows) nameToId.set(String(row.name), String(row.channel_id));
-    const parentIdOf = new Map<string, string>();
-    for (const row of rows) {
-      const name = String(row.name);
-      const sep = name.indexOf(" / ");
-      if (sep <= 0) continue;
-      const parent = nameToId.get(name.slice(0, sep));
-      if (parent && parent !== String(row.channel_id))
-        parentIdOf.set(String(row.channel_id), parent);
-    }
+    const parentIdOf = buildThreadParentMap(rows);
     // 集約エントリは getChannelScopeIds で集約対象のチャンネルID一覧を取得
     // (通常チャンネルは scopeIds = null が正常で、targetIds は実チャンネル+スレッド)
-    const scopeIds = isAggregatedEntry
-      ? await getChannelScopeIds(pool, guild, channelId)
-      : null;
+    const scopeIds = isAggregatedEntry ? await getChannelScopeIds(pool, guild, channelId) : null;
     if (scopeIds instanceof Response || (isAggregatedEntry && scopeIds === null)) {
       cache.set(ckey, emptyPayload, ttl);
       return jsonResponse(emptyPayload, 200, headers);
     }
-    const targetIds =
-      scopeIds ??
-      [
-          channelId,
-          ...[...parentIdOf.entries()]
-            .filter(([, parent]) => parent === channelId)
-            .map(([child]) => child),
-        ];
+    const targetIds = scopeIds ?? [
+      channelId,
+      ...[...parentIdOf.entries()]
+        .filter(([, parent]) => parent === channelId)
+        .map(([child]) => child),
+    ];
 
     const baseParams: unknown[] = [guild.guildId, targetIds];
     let periodFilter = "";
@@ -509,7 +477,7 @@ export function register(app: Hono<AppEnv>, h: RouteHelpers): void {
     const channelInfo = {
       channel_id: channelId,
       name: self.name as string,
-      category: (self.category_name as string) || "未分類",
+      category: (self.category_name as string) || UNCATEGORIZED_LABEL,
       position: Number(self.position) || 999999,
     };
     if (messages === 0) {

@@ -32,6 +32,7 @@ import {
   plainTextResponse,
   readBodyCapped,
 } from "../http";
+import { channelDisplayNameSql } from "../channelGrouping";
 import { dashboardBaseUrl, normalizeHost } from "../guilds";
 import type { AppEnv } from "../types";
 import type { RouteHelpers } from "./context";
@@ -399,7 +400,7 @@ export function register(app: Hono<AppEnv>, h: RouteHelpers): void {
       SELECT
           CASE
               WHEN c.category_id = ANY($3::bigint[]) THEN
-                  (CASE WHEN c.name LIKE '% / %' THEN btrim(split_part(c.name, '/', 1)) ELSE c.name END)
+                  (${channelDisplayNameSql("c")})
               ELSE $5::text
           END AS name,
           count(*) AS count
@@ -411,7 +412,7 @@ export function register(app: Hono<AppEnv>, h: RouteHelpers): void {
       LIMIT 10
       `
         : `
-      SELECT CASE WHEN c.name LIKE '% / %' THEN btrim(split_part(c.name, '/', 1)) ELSE c.name END AS name, count(*) AS count
+      SELECT ${channelDisplayNameSql("c")} AS name, count(*) AS count
       FROM messages m
       JOIN channels c ON m.channel_id = c.channel_id
       WHERE m.created_at >= $1 AND m.created_at < $2 AND m.is_bot = FALSE AND m.guild_id = $3
@@ -468,7 +469,7 @@ export function register(app: Hono<AppEnv>, h: RouteHelpers): void {
       SELECT
           CASE
               WHEN c.category_id = ANY($1::bigint[]) THEN
-                  (CASE WHEN c.name LIKE '% / %' THEN btrim(split_part(c.name, '/', 1)) ELSE c.name END)
+                  (${channelDisplayNameSql("c")})
               ELSE ${labelParam}
           END AS name,
           count(*) AS count
@@ -480,7 +481,7 @@ export function register(app: Hono<AppEnv>, h: RouteHelpers): void {
       LIMIT 10
       `
         : `
-      SELECT CASE WHEN c.name LIKE '% / %' THEN btrim(split_part(c.name, '/', 1)) ELSE c.name END AS name, count(*) AS count
+      SELECT ${channelDisplayNameSql("c")} AS name, count(*) AS count
       FROM messages m
       JOIN channels c ON m.channel_id = c.channel_id
       WHERE ${filters.join(" AND ")}
@@ -512,17 +513,33 @@ export function register(app: Hono<AppEnv>, h: RouteHelpers): void {
     if (userParam !== undefined && userParam.length > 20) {
       return jsonError(422, "Invalid query parameter: user_id");
     }
-    // extras=0: ポップアップ用の派生集計をスキップして速く返す (カード表示用)
+    // extras=0: ポップアップ用の派生集計を省いたカード表示用レスポンス。
+    // 完全版 (x1) がキャッシュにあればそこから派生する。
     const withExtras = c.req.query("extras") !== "0";
 
     const guildOrError = await requireGuild(c);
     if (guildOrError instanceof Response) return guildOrError;
     const guild = guildOrError;
 
-    const ckey = `ana_m_${guild.guildId}_${year}_${month}_${channelId ?? "None"}_${userParam ?? "None"}_${withExtras ? "x1" : "x0"}`;
+    const ckeyBase = `ana_m_${guild.guildId}_${year}_${month}_${channelId ?? "None"}_${userParam ?? "None"}`;
+    const ckey = `${ckeyBase}_${withExtras ? "x1" : "x0"}`;
     const headers = monthCacheControl(access.isRestricted);
     const cached = cache.get(ckey);
     if (cached !== undefined) return jsonResponse(cached, 200, headers);
+    if (!withExtras) {
+      const full = cache.get(`${ckeyBase}_x1`);
+      if (full !== undefined) {
+        const stripped = {
+          ...(full as Record<string, unknown>),
+          new_members: 0,
+          repeat: null,
+          longest_message: null,
+          leaders: [],
+        };
+        cache.set(ckey, stripped, 600);
+        return jsonResponse(stripped, 200, headers);
+      }
+    }
 
     const bounds = monthBounds(year, month);
     if (!Array.isArray(bounds)) return jsonError(400, bounds);
@@ -595,15 +612,13 @@ export function register(app: Hono<AppEnv>, h: RouteHelpers): void {
     );
 
     // ポップアップ用の派生集計 (リピーター分布・日別1位・最長メッセージ・新規メンバー)。
-    // extras=0 ならスキップ (カード表示には不要なため、フロントは /stats/analysis_extras で別取得)
-    const [repeat, leaders, longest, newMembers] = withExtras
-      ? await Promise.all([
-          repeatBuckets(pool, uniqueWhere, params),
-          leadersPerDay(pool, uniqueWhere, params),
-          longestMessage(pool, uniqueWhere, params),
-          newMembersCount(pool, { guildId: guild.guildId, start: startDate, end: endDate }),
-        ])
-      : [null, [], null, 0];
+    // x0リクエストでも常に計算してx1キャッシュを作る (以降のx0は派生で済む)
+    const [repeat, leaders, longest, newMembers] = await Promise.all([
+      repeatBuckets(pool, uniqueWhere, params),
+      leadersPerDay(pool, uniqueWhere, params),
+      longestMessage(pool, uniqueWhere, params),
+      newMembersCount(pool, { guildId: guild.guildId, start: startDate, end: endDate }),
+    ]);
 
     const res = {
       total,
@@ -618,8 +633,11 @@ export function register(app: Hono<AppEnv>, h: RouteHelpers): void {
       longest_message: longest,
       leaders,
     };
-    cache.set(ckey, res, 600);
-    return jsonResponse(res, 200, headers);
+    cache.set(`${ckeyBase}_x1`, res, 600);
+    if (withExtras) return jsonResponse(res, 200, headers);
+    const stripped = { ...res, new_members: 0, repeat: null, longest_message: null, leaders: [] };
+    cache.set(ckey, stripped, 600);
+    return jsonResponse(stripped, 200, headers);
   });
 
   app.get("/stats/analysis/total", async (c) => {
@@ -635,7 +653,8 @@ export function register(app: Hono<AppEnv>, h: RouteHelpers): void {
     const endRaw = c.req.query("end_date");
     const endDate = parseEndDate(endRaw);
     if (endDate === "invalid") return jsonError(422, "Invalid query parameter: end_date");
-    // extras=0: ポップアップ用の派生集計をスキップして速く返す (カード表示用)
+    // extras=0: ポップアップ用の派生集計を省いたカード表示用レスポンス。
+    // 完全版 (x1) がキャッシュにあればそこから派生するため重い集計を再実行しない。
     const withExtras = c.req.query("extras") !== "0";
 
     const ttl = endDate ? 86400 : LIVE_TOTAL_CACHE_TTL;
@@ -643,9 +662,25 @@ export function register(app: Hono<AppEnv>, h: RouteHelpers): void {
     const guildOrError = await requireGuild(c);
     if (guildOrError instanceof Response) return guildOrError;
     const guild = guildOrError;
-    const ckey = `ana_t_${guild.guildId}_${channelId ?? "None"}_${userParam ?? "None"}_${endRaw ?? "None"}_${withExtras ? "x1" : "x0"}`;
+    const ckeyBase = `ana_t_${guild.guildId}_${channelId ?? "None"}_${userParam ?? "None"}_${endRaw ?? "None"}`;
+    const ckey = `${ckeyBase}_${withExtras ? "x1" : "x0"}`;
     const cached = cache.get(ckey);
     if (cached !== undefined) return jsonResponse(cached, 200, headers);
+    // extras=0 のリクエストでも完全版 (x1) が温まっていれば派生して即返す
+    // (?m=all 初回のコールド集計 7秒問題の対策。ウォームループはx1を温める)
+    if (!withExtras) {
+      const full = cache.get(`${ckeyBase}_x1`);
+      if (full !== undefined) {
+        const stripped = {
+          ...(full as Record<string, unknown>),
+          repeat: null,
+          longest_message: null,
+          leaders: [],
+        };
+        cache.set(ckey, stripped, ttl);
+        return jsonResponse(stripped, 200, headers);
+      }
+    }
 
     const pool = deps.getPool();
     if (!pool) return jsonError(503, "Service unavailable.");
@@ -717,14 +752,13 @@ export function register(app: Hono<AppEnv>, h: RouteHelpers): void {
       params,
     );
 
-    // ポップアップ用の派生集計 (全期間: 新規メンバーは比較対象がないためnull)
-    const [repeat, leaders, longest] = withExtras
-      ? await Promise.all([
-          repeatBuckets(pool, uniqueWhere, params),
-          leadersPerDay(pool, uniqueWhere, params),
-          longestMessage(pool, uniqueWhere, params),
-        ])
-      : [null, [], null];
+    // ポップアップ用の派生集計 (全期間: 新規メンバーは比較対象がないためnull)。
+    // x0リクエストでも常に計算してx1キャッシュを作る (以降のx0は派生で済む)
+    const [repeat, leaders, longest] = await Promise.all([
+      repeatBuckets(pool, uniqueWhere, params),
+      leadersPerDay(pool, uniqueWhere, params),
+      longestMessage(pool, uniqueWhere, params),
+    ]);
 
     const res = {
       total,
@@ -739,8 +773,11 @@ export function register(app: Hono<AppEnv>, h: RouteHelpers): void {
       longest_message: longest,
       leaders,
     };
-    cache.set(ckey, res, ttl);
-    return jsonResponse(res, 200, headers);
+    cache.set(`${ckeyBase}_x1`, res, ttl);
+    if (withExtras) return jsonResponse(res, 200, headers);
+    const stripped = { ...res, repeat: null, longest_message: null, leaders: [] };
+    cache.set(ckey, stripped, ttl);
+    return jsonResponse(stripped, 200, headers);
   });
 
   /** ポップアップ用の派生集計 (リピーター分布・日別1位・最長メッセージ・新規メンバー)。

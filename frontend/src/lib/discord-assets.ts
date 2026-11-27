@@ -37,6 +37,22 @@ export function paletteColor(palette: string | null | undefined): string {
   return NAMEPLATE_PALETTE_COLORS[palette] ?? NAMEPLATE_PALETTE_COLORS.white;
 }
 
+/** Discord CDN のURLプレフィックス */
+const DISCORD_CDN_PREFIX = "https://cdn.discordapp.com/";
+
+/**
+ * Discord CDN URLを同一オリジンのプロキシ (/api/avatar/*) 経由に変換する。
+ * img-src を 'self' に閉じ、利用者のIPをDiscordに直接見せないため。
+ * Discord CDN以外のURLはそのまま返す。
+ */
+export function proxiedDiscordUrl(url: string | null | undefined): string | null {
+  if (!url) return null;
+  if (url.startsWith(DISCORD_CDN_PREFIX)) {
+    return `/api/avatar/${url.slice(DISCORD_CDN_PREFIX.length)}`;
+  }
+  return url;
+}
+
 /** Discord公式のデフォルトアバター (embed/avatars 0-5.png) の背景色。
  * 新ユーザー名方式では (user_id >> 22) % 6 でインデックスが決まる */
 export const DEFAULT_AVATAR_COLORS: readonly string[] = [
@@ -80,7 +96,7 @@ export function profileBannerStyle(opts: {
 }): CSSProperties {
   if (opts.banner) {
     return {
-      backgroundImage: `url(${opts.banner})`,
+      backgroundImage: `url(${proxiedDiscordUrl(opts.banner)})`,
       backgroundSize: "cover",
       backgroundPosition: "center",
     };

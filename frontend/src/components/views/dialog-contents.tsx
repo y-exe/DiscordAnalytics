@@ -8,8 +8,19 @@
  */
 
 import type { ReactNode } from "react";
-import { DataTable } from "@/components/ui/easyui/DataTable";
+import dynamic from "next/dynamic";
+import type { DataTableProps } from "@/components/ui/easyui/DataTable";
 import { CategoryBarChart } from "./charts";
+
+// DataTable (38KB) はダイアログ開閉時しか使わないため遅延読み込みする。
+// next/dynamic はジェネリクスを保持しないため、使用側の形で型を付け直す。
+const DataTable = dynamic(
+  () => import("@/components/ui/easyui/DataTable").then((m) => m.DataTable),
+  {
+    ssr: false,
+    loading: () => <div className="skeleton h-64 w-full rounded-xl" />,
+  },
+) as unknown as <T extends { id: string | number }>(props: DataTableProps<T>) => ReactNode;
 import {
   ActivityCalendar,
   DialogSection,
