@@ -66,11 +66,15 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
     const isBot = isApiClient(c.req.header("x-api-key"), cfg.apiSecret);
     const path = c.req.path;
     const isPublicPath = PUBLIC_PATHS.has(path);
+    // 画像プロキシは1ページで数十リクエスト飛ぶため、通常APIと同じレート制限カウンタに
+    // 含めると即座にブロックされる (NGINX側でキャッシュ・緩和するのでここでは対象外)
+    const isImageProxy = path.startsWith("/avatar/");
 
     if (
       WRITE_METHODS.has(c.req.method) &&
       !isBot &&
       !isPublicPath &&
+      !isImageProxy &&
       !path.startsWith("/ai/") &&
       path !== "/admin/login" &&
       path !== "/admin/logout"
@@ -95,15 +99,18 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
       });
     }
 
-    const requestLimit = isBot ? cfg.botMaxRequests : cfg.maxRequests;
-    if (!cache.consumeLimit(`request:${clientIp}`, requestLimit, cfg.rateLimitWindow)) {
-      cache.set(blockKey, true, cfg.blockDuration);
-      return jsonResponse({ detail: "Too Many Requests. Blocked for 10 minutes." }, 429, {
-        "X-Debug-Block": "rate-limit-exceeded",
-      });
+    // 画像プロキシはグローバルレート制限の対象外 (NGINX側でキャッシュ・緩和する)。
+    // 含めると1ページ数十枚のアバター取得で即座にブロックされ、サイト全体が429になる。
+    if (!isImageProxy) {
+      const requestLimit = isBot ? cfg.botMaxRequests : cfg.maxRequests;
+      if (!cache.consumeLimit(`request:${clientIp}`, requestLimit, cfg.rateLimitWindow)) {
+        cache.set(blockKey, true, cfg.blockDuration);
+        return jsonResponse({ detail: "Too Many Requests. Blocked for 10 minutes." }, 429, {
+          "X-Debug-Block": "rate-limit-exceeded",
+        });
+      }
     }
-
-    if (!isPublicPath && isDbHeavyPath(path)) {
+    if (!isPublicPath && !isImageProxy && isDbHeavyPath(path)) {
       const dbLimit = isBot ? cfg.dbBotMaxRequests : cfg.dbMaxRequests;
       if (!cache.consumeLimit(`db:${clientIp}`, dbLimit, cfg.dbRateLimitWindow)) {
         cache.set(blockKey, true, cfg.blockDuration);
