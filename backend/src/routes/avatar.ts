@@ -20,8 +20,8 @@ const ALLOWED_PATH =
 /** 上流へ素通ししてよいクエリパラメータ (サイズ指定などDiscord CDNの公式パラメータ) */
 const ALLOWED_QUERY_KEY = /^(?:size|publisher_restricted|passthrough)$/;
 
-/** メモリキャッシュ: 最大エントリ数とTTL (DiscordのアセットURLはハッシュベースで不変) */
-const CACHE_MAX_ENTRIES = 2_000;
+/** メモリキャッシュ: 合計128MiBまで (メモリ1Gi制限の~12%)。TTL 24時間 */
+const CACHE_BUDGET_BYTES = 128 * 1024 * 1024;
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 /** 1枚あたりのキャッシュ上限 (超える画像はキャッシュせず素通し) */
 const CACHE_MAX_BYTES = 512 * 1024;
@@ -37,6 +37,7 @@ interface CacheEntry {
 }
 
 const cache = new Map<string, CacheEntry>();
+let cacheBytes = 0;
 /** 同一URLへの同時fetchを1つにまとめる */
 const inFlight = new Map<string, Promise<{ body: Buffer; contentType: string } | null>>();
 
@@ -45,6 +46,7 @@ function cacheGet(key: string): CacheEntry | null {
   if (!hit) return null;
   if (Date.now() > hit.expiresAt) {
     cache.delete(key);
+    cacheBytes -= hit.body.length;
     return null;
   }
   // LRU: 参照時に末尾へ移動
@@ -54,12 +56,16 @@ function cacheGet(key: string): CacheEntry | null {
 }
 
 function cacheSet(key: string, entry: CacheEntry): void {
-  while (cache.size >= CACHE_MAX_ENTRIES) {
+  // 予算超過時は古いエントリから排除 (LRU)
+  while (cacheBytes + entry.body.length > CACHE_BUDGET_BYTES) {
     const oldest = cache.keys().next().value;
     if (oldest === undefined) break;
+    const evicted = cache.get(oldest);
+    cacheBytes -= evicted?.body.length ?? 0;
     cache.delete(oldest);
   }
   cache.set(key, entry);
+  cacheBytes += entry.body.length;
 }
 
 /** 上流 (Discord CDN) から取得。同一URLの同時リクエストは1つのfetchにまとめる */

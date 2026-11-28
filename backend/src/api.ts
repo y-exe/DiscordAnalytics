@@ -99,24 +99,42 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
       });
     }
 
+    // ギルド人数に応じてレート制限を倍増する (大規模ギルドほど同時閲覧が多い)。
+    // ギルド解決は60秒キャッシュ済みなので追加コストは無視できる。
+    let memberFactor = 1;
+    try {
+      const pool = deps.getPool();
+      const host = c.req.header("x-forwarded-host") ?? c.req.header("host");
+      if (pool && host) {
+        const guild = await resolveGuildByHost(pool, cfg, host);
+        if (guild) {
+          // 1000人ごとに+1倍 (最大10倍)。9000人ギルドなら9倍
+          memberFactor = Math.min(10, Math.max(1, Math.ceil(guild.memberCount / 1000)));
+        }
+      }
+    } catch {
+      memberFactor = 1;
+    }
+
     // 画像プロキシはグローバルレート制限の対象外 (NGINX側でキャッシュ・緩和する)。
     // 含めると1ページ数十枚のアバター取得で即座にブロックされ、サイト全体が429になる。
     if (!isImageProxy) {
-      const requestLimit = isBot ? cfg.botMaxRequests : cfg.maxRequests;
+      const requestLimit = (isBot ? cfg.botMaxRequests : cfg.maxRequests) * memberFactor;
       if (!cache.consumeLimit(`request:${clientIp}`, requestLimit, cfg.rateLimitWindow)) {
         cache.set(blockKey, true, cfg.blockDuration);
         return jsonResponse({ detail: "Too Many Requests. Blocked for 10 minutes." }, 429, {
           "X-Debug-Block": "rate-limit-exceeded",
         });
       }
-    }
-    if (!isPublicPath && !isImageProxy && isDbHeavyPath(path)) {
-      const dbLimit = isBot ? cfg.dbBotMaxRequests : cfg.dbMaxRequests;
-      if (!cache.consumeLimit(`db:${clientIp}`, dbLimit, cfg.dbRateLimitWindow)) {
-        cache.set(blockKey, true, cfg.blockDuration);
-        return jsonResponse({ detail: "Too Many Requests. Blocked for 10 minutes." }, 429, {
-          "X-Debug-Block": "db-rate-limit-exceeded",
-        });
+
+      if (!isPublicPath && isDbHeavyPath(path)) {
+        const dbLimit = (isBot ? cfg.dbBotMaxRequests : cfg.dbMaxRequests) * memberFactor;
+        if (!cache.consumeLimit(`db:${clientIp}`, dbLimit, cfg.dbRateLimitWindow)) {
+          cache.set(blockKey, true, cfg.blockDuration);
+          return jsonResponse({ detail: "Too Many Requests. Blocked for 10 minutes." }, 429, {
+            "X-Debug-Block": "db-rate-limit-exceeded",
+          });
+        }
       }
     }
 

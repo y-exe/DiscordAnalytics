@@ -28,6 +28,8 @@ export interface GuildContext {
   domains: string[];
   /** ダッシュボードの代表ドメイン (is_primary = TRUE) */
   primaryDomains: string[];
+  /** 登録メンバー数 (レート制限のスケーリング等に使用) */
+  memberCount: number;
 }
 
 interface GuildRow {
@@ -37,6 +39,7 @@ interface GuildRow {
   king_role_id: string | bigint | null;
   excluded_channel_ids: unknown;
   display_config: unknown;
+  member_count: unknown;
   domains: string[] | null;
   primary_domains: string[] | null;
 }
@@ -83,6 +86,7 @@ function toGuildContext(row: GuildRow): GuildContext {
     kingRoleId: parseId(row.king_role_id),
     excludedChannelIds: parseIdArray(row.excluded_channel_ids),
     displayConfig: parseDisplayConfig(row.display_config),
+    memberCount: Number(row.member_count) || 0,
     domains: Array.isArray(row.domains) ? row.domains.map(String) : [],
     primaryDomains: Array.isArray(row.primary_domains) ? row.primary_domains.map(String) : [],
   };
@@ -104,6 +108,7 @@ export function normalizeHost(raw: string | undefined | null): string {
 
 const GUILD_BY_ID_SQL = `
   SELECT g.guild_id, g.name, g.icon_url, g.king_role_id, g.excluded_channel_ids, g.display_config,
+         (SELECT count(*) FROM guild_members gm WHERE gm.guild_id = g.guild_id) AS member_count,
          array_agg(d.domain ORDER BY d.domain) FILTER (WHERE d.domain IS NOT NULL AND d.is_active) AS domains,
          array_agg(d.domain ORDER BY d.domain) FILTER (WHERE d.is_primary AND d.domain IS NOT NULL AND d.is_active) AS primary_domains
   FROM guilds g
